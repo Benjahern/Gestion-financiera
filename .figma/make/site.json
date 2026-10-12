@@ -1,0 +1,10 @@
+{
+  "description": "Manage and visualize personal finances with a responsive dashboard showing net worth, budgets, expenses, income, and investments in clear, minimalistic layouts.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
