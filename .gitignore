@@ -1,8 +1,39 @@
 node_modules/
+# The pnpm workspace uses only the root lockfile.
+/frontend/pnpm-lock.yaml
 dist/
 build/
 .cache/
 .env*
+!.env.example
+# Personal financial spreadsheets must not be published with source code.
+*.xlsx
+*.XLSX
+*.xls
+*.xlsm
+*.ods
+*.csv
+*.ofx
+*.qfx
+*.qif
+*.numbers
+*.sql
+!backend/internal/orden/migrations/*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.backup
+*.sql.gz
+backups/
+secrets/
+credentials*.json
+client_secret*.json
+*.pem
+*.key
+*.p12
+*.pfx
+backend/orden
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
@@ -20,3 +51,6 @@ logs/
 /.plugins/
 /.opencode-skills/
 /.opencode/
+coverage/
+playwright-report/
+test-results/

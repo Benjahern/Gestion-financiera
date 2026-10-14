@@ -1,0 +1,95 @@
+# Production only. Coolify routes the domain to web:8080; no host ports are published.
+services:
+  db:
+    build:
+      context: .
+      dockerfile: deploy/postgres.Dockerfile
+    environment:
+      POSTGRES_DB: orden
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set a unique admin password in Coolify}
+      ORDEN_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set a unique app password in Coolify}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U orden -d orden"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 200
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: production
+      APP_ORIGIN: ${APP_ORIGIN:?Set the public HTTPS origin without a path or internal port}
+      OWNER_EMAIL: ${OWNER_EMAIL:?Set the private owner email in Coolify}
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:?Generate 32 bytes with openssl rand -hex 32}
+      HTTP_ADDR: :8080
+      PGHOST: db
+      PGDATABASE: orden
+      PGUSER: orden
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set the app password}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [app, data, egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 100
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      INTERNAL_PROXY_SECRET: ${INTERNAL_PROXY_SECRET:?Set the internal proxy secret}
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    expose: ["8080"]
+    depends_on:
+      backend: {condition: service_healthy}
+    networks: [app, default]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 100
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  data: {internal: true}
+  app: {internal: true}
+  egress: {}
+  default: {}
+volumes:
+  postgres-data:

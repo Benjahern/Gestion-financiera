@@ -1,0 +1,11 @@
+.env*
+*.test
+coverage*
+README.md
+orden
+*.pem
+*.key
+credentials*.json
+client_secret*.json
+secrets/
+backups/

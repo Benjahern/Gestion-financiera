@@ -1,0 +1,72 @@
+name: Production checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: orden
+          POSTGRES_PASSWORD: ci-fixture-only
+          POSTGRES_DB: orden_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U orden -d orden_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: python3 scripts/check-public-repo.py --history --export /tmp/orden-public
+      - run: >-
+          docker run --rm -v /tmp/orden-public:/repo:ro
+          ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9
+          dir /repo --redact --no-banner
+      - run: >-
+          docker run --rm -v "$PWD:/repo:ro"
+          ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9
+          git /repo --redact --no-banner --log-opts=--all
+      - run: npm install -g pnpm@11.28.5
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm build && pnpm audit --audit-level=moderate
+      - run: pnpm --filter finance-frontend security-check
+      - run: go test -race ./... && go vet ./...
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgres://orden:ci-fixture-only@localhost:5432/orden_test?sslmode=disable
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        working-directory: backend
+      - run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/orden-arm64 ./cmd/orden
+        working-directory: backend
+      - run: |
+          docker build --pull -t orden-ci-web -f frontend/Dockerfile .
+          docker build --pull -t orden-ci-backend backend
+          docker build --pull -t orden-ci-db -f deploy/postgres.Dockerfile .
+          docker save -o /tmp/orden-ci-web.tar orden-ci-web
+          docker save -o /tmp/orden-ci-backend.tar orden-ci-backend
+          docker save -o /tmp/orden-ci-db.tar orden-ci-db
+      - name: Scan production runtime images
+        run: |
+          for service in web backend db; do
+            docker run --rm -v /tmp:/input:ro \
+              aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+              image --input /input/orden-ci-$service.tar --scanners vuln \
+              --severity HIGH,CRITICAL --exit-code 1 --no-progress
+          done

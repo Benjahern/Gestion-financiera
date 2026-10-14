@@ -1,5 +1,7 @@
 {
-  "description": "Manage and visualize personal finances with a responsive dashboard showing net worth, budgets, expenses, income, and investments in clear, minimalistic layouts.",
+  "title": "Orden — Finanzas personales",
+  "language": "es",
+  "description": "Orden: finanzas personales privadas, cuentas, gastos, ingresos y aportes de inversión en CLP y USD.",
   "robots": {
     "index": false
   },

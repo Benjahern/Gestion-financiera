@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = refs/heads/main ]; then
+    echo 'Direct pushes to production main are blocked. Push a branch and open a PR.' >&2
+    exit 1
+  fi
+done
+exec python3 scripts/check-public-repo.py --history

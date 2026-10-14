@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+branch=$(git symbolic-ref --quiet --short HEAD || true)
+if [ "$branch" = main ]; then
+  echo 'main is production. Create a feature/release branch and merge through a reviewed PR.' >&2
+  exit 1
+fi
+for identity in GIT_AUTHOR_IDENT GIT_COMMITTER_IDENT; do
+  email=$(git var "$identity" | sed -n 's/.*<\([^>]*\)>.*/\1/p')
+  case "$email" in
+    *@users.noreply.github.com) ;;
+    *) echo 'Use your GitHub noreply email for public commits (git config --local user.email ...).' >&2; exit 1 ;;
+  esac
+done
+exec python3 scripts/check-public-repo.py --staged
