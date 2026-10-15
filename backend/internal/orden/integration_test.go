@@ -184,6 +184,9 @@ func TestIntegration(t *testing.T) {
 	check(request("DELETE", fmt.Sprintf("/api/movements/%d", expense), nil, cookie, auth.CSRF, s.config.Origin), 200)
 	check(request("GET", "/api/movements?limit=1000", nil, cookie, "", ""), 400)
 	check(request("GET", "/api/movements?search=%27%3BDROP%20TABLE%20users%3B--", nil, cookie, "", ""), 200)
+	t.Run("investment account classification", func(t *testing.T) {
+		testInvestmentClassification(t, request, cookie, auth.CSRF, s.config.Origin, clp, usd)
+	})
 	recovery, err := IssueCode(ctx, db, "recover")
 	if err != nil {
 		t.Fatal(err)
