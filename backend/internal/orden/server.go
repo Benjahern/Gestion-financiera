@@ -55,6 +55,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/movements/{id}", s.authenticate(http.HandlerFunc(s.saveMovement)))
 	mux.Handle("DELETE /api/movements/{id}", s.authenticate(http.HandlerFunc(s.deleteMovement)))
 	mux.Handle("GET /api/overview", s.authenticate(http.HandlerFunc(s.overview)))
+	mux.Handle("GET /api/calculator", s.authenticate(http.HandlerFunc(s.getCalculator)))
+	mux.Handle("PUT /api/calculator", s.authenticate(http.HandlerFunc(s.saveCalculator)))
 	s.importRoutes(mux)
 	return s.security(mux)
 }

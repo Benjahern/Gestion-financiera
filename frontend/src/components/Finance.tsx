@@ -408,7 +408,7 @@ export function Ledger({
   pendingOnly,
   setPendingOnly,
 }: {
-  page: Exclude<Page, "dashboard" | "cuentas" | "ajustes">;
+  page: Exclude<Page, "dashboard" | "cuentas" | "ajustes" | "calculadora">;
   data: MovementPage;
   overview: Overview;
   search: string;
