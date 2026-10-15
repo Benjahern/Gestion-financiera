@@ -1,4 +1,6 @@
 node_modules/
+**/test-results/
+**/playwright-report/
 # The pnpm workspace uses only the root lockfile.
 /frontend/pnpm-lock.yaml
 dist/

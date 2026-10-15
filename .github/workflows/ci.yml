@@ -1,5 +1,6 @@
 name: Production checks
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
   push:
@@ -45,8 +46,13 @@ jobs:
           git /repo --redact --no-banner --log-opts=--all
       - run: npm install -g pnpm@11.28.5
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck && pnpm build && pnpm audit --audit-level=moderate
+      - name: Typecheck, unit tests, production build and dependency audit
+        run: pnpm typecheck && pnpm --filter finance-frontend test && pnpm build && pnpm audit --audit-level=moderate
       - run: pnpm --filter finance-frontend security-check
+      - name: Install Chromium for browser checks
+        run: pnpm --filter finance-frontend exec playwright install --with-deps chromium
+      - name: Browser checks (desktop and mobile, synthetic data only)
+        run: pnpm --filter finance-frontend test:browser
       - run: go test -race ./... && go vet ./...
         working-directory: backend
         env:

@@ -128,7 +128,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .brand-mark span:nth-child(3) { height: 25px; }
 .sidebar-nav { display: flex; flex-direction: column; gap: 6px; margin-top: 50px; }
 .nav-item, .mobile-nav-item {
-  border: 0; background: transparent; cursor: pointer;
+  border: 0; background: transparent; cursor: pointer; text-decoration: none;
 }
 .nav-item {
   display: flex; align-items: center; gap: 13px; width: 100%; padding: 12px 13px;
@@ -318,8 +318,8 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .mobile-brand .brand-mark span:nth-child(1) { height: 8px; }.mobile-brand .brand-mark span:nth-child(2) { height: 15px; }.mobile-brand .brand-mark span:nth-child(3) { height: 20px; }
   .status-pill { display: none; }
   .period-button { height: 34px; }
-  .mobile-nav { position: fixed; display: flex; z-index: 50; bottom: 0; left: 0; right: 0; height: 70px; padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); background: rgba(18, 23, 21, .96); border-top: 1px solid var(--line); backdrop-filter: blur(14px); }
-  .mobile-nav-item { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); font-size: 8px; }
+  .mobile-nav { position: fixed; display: flex; overflow-x:auto; z-index: 50; bottom: 0; left: 0; right: 0; min-height: 70px; padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); background: rgba(18, 23, 21, .96); border-top: 1px solid var(--line); backdrop-filter: blur(14px); }
+  .mobile-nav-item { flex: 1 0 60px; min-width: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); font-size: 8px; }
   .mobile-nav-item.active { color: var(--accent); }
   .page { padding: 29px 18px 38px; }
   .dashboard-intro { margin-bottom: 23px; }
@@ -379,6 +379,33 @@ h1 { margin: 0; }
 .auth-card .eyebrow { line-height: 1.7; }
 .auth-description { color: var(--text-soft); font-size: 13px; line-height: 1.7; margin: 12px 0 24px; }
 .auth-form { display: flex; flex-direction: column; gap: 18px; }
+.calculator-page { max-width: 1280px; }
+.calculator-badge { align-self: flex-start; padding: 8px 12px; border: 1px solid var(--line); border-radius: 20px; color: var(--accent); font-size: 11px; }
+.calculator-config { display: grid; gap: 22px; }
+.calculator-fieldset { margin: 0; padding-top: 18px; }
+.calculator-fieldset legend { padding: 0 9px; font-size: 16px; font-weight: 600; color: var(--text); }
+.calculator-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; margin: 18px 0; }
+.calculator-subheading { margin: 24px 0 12px; font-size: 14px; }
+.calculator-save, .calculator-simulation-input { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.calculator-save .form-note { max-width: 65%; }
+.calculator-save button { flex-shrink: 0; }
+.calculator-simulation { margin-top: 32px; }
+.calculator-simulation h2 { font-size: 20px; margin-top: 8px; }
+.calculator-simulation-input { justify-content: flex-start; margin: 24px 0; }
+.calculator-simulation-input .field { flex: 1; max-width: 360px; }
+.calculator-progress { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; color: var(--text-soft); font-size: 12px; margin: 25px 0; }
+.calculator-progress progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.calculator-results { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.calculator-result { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); }
+.calculator-result span { color: var(--muted); font-size: 12px; }
+.calculator-result strong { font-family: "Manrope",sans-serif; font-size: 19px; overflow-wrap: anywhere; }
+.calculator-total { display: flex; justify-content: space-between; gap: 16px; padding: 22px 0 10px; color: var(--accent); font-size: 18px; }
+@media (max-width: 600px) {
+  .calculator-fields, .calculator-results { grid-template-columns: 1fr; }
+  .calculator-save, .calculator-simulation-input { flex-direction: column; align-items: stretch; }
+  .calculator-save .form-note { max-width: 100%; }
+  .calculator-simulation-input .field { max-width: none; }
+}
 .auth-form .field { font-size: 12px; }
 .auth-form .field input { font-size: 14px; height: 47px; }
 .auth-card .primary-button { width: 100%; min-height: 46px; font-size: 13px; }

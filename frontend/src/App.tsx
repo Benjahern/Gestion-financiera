@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Auth from "./components/Auth";
 import Settings from "./components/Settings";
+import Calculator from "./components/Calculator";
+import { pageFromLocation, pagePaths } from "./lib/navigation";
 import { Accounts, Dashboard, Ledger } from "./components/Finance";
 import { AccountForm, MovementForm } from "./components/Forms";
 import { Brand, Button, EmptyState, Icon, Modal, type IconName } from "./components/ui";
@@ -24,6 +26,7 @@ const nav: { id: Page; label: string; icon: IconName }[] = [
   { id: "ingresos", label: "Ingresos", icon: "income" },
   { id: "inversiones", label: "Inversiones", icon: "investment" },
   { id: "cuentas", label: "Cuentas", icon: "wallet" },
+  { id: "calculadora", label: "Calculadora", icon: "calculator" },
   { id: "ajustes", label: "Conexiones", icon: "wallet" },
 ];
 type Form =
@@ -42,8 +45,9 @@ type Removal =
 
 function Workspace({ onLogout }: { onLogout: () => void }) {
   const [page, setPage] = useState<Page>(
-    new URLSearchParams(window.location.search).has("gmail") ? "ajustes" : "dashboard",
+    pageFromLocation(window.location.pathname, window.location.search) ?? "dashboard",
   );
+  const [missingPage, setMissingPage] = useState(() => pageFromLocation(window.location.pathname, window.location.search) === null);
   const [currency, setCurrency] = useState<Currency>("CLP");
   const [month, setMonth] = useState(today().slice(0, 7));
   const [search, setSearch] = useState("");
@@ -85,13 +89,14 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           query.set("pending", "true");
           query.delete("month");
         }
-        if (page !== "dashboard" && page !== "cuentas" && page !== "ajustes")
+        const ledgerPage = page === "gastos" || page === "ingresos" || page === "inversiones";
+        if (ledgerPage)
           query.set("kind", pageConfig[page].kind);
-        if (page !== "dashboard" && page !== "cuentas" && page !== "ajustes") {
+        if (ledgerPage) {
           query.set("search", search.trim());
           query.set("category", category.trim());
         }
-        const financialPage = page !== "cuentas" && page !== "ajustes";
+        const financialPage = page === "dashboard" || ledgerPage;
         const summaryKey = `${currency}:${month}`;
         const refresh = !signal || loadedPage.current !== page;
         const [a, o, m] = await Promise.all([
@@ -132,6 +137,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     };
   }, [load]);
   const navigate = (next: Page) => {
+    if (window.location.pathname !== pagePaths[next] || window.location.search) window.history.pushState(null, "", pagePaths[next]);
+    setMissingPage(false);
     setPage(next);
     setOffset(0);
     setSearch("");
@@ -139,6 +146,24 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
     setPendingOnly(false);
     setForm(null);
     setRemoval(null);
+  };
+  useEffect(() => {
+    const initial = pageFromLocation(window.location.pathname, window.location.search);
+    if (initial) window.history.replaceState(null, "", pagePaths[initial] + window.location.search + window.location.hash);
+    const backOrForward = () => {
+      const next = pageFromLocation(window.location.pathname, window.location.search);
+      setMissingPage(next === null);
+      setPage(next ?? "dashboard");
+      setOffset(0); setSearch(""); setCategory(""); setPendingOnly(false);
+      setForm(null); setRemoval(null);
+    };
+    window.addEventListener("popstate", backOrForward);
+    return () => window.removeEventListener("popstate", backOrForward);
+  }, []);
+  const follow = (event: React.MouseEvent<HTMLAnchorElement>, next: Page) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate(next);
   };
   const logout = async (all = false) => {
     setActionBusy(true);
@@ -178,14 +203,16 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         <Brand />
         <nav className="sidebar-nav" aria-label="Navegación principal">
           {nav.map((item) => (
-            <Button
+            <a
               key={item.id}
               className={`nav-item ${page === item.id ? "active" : ""}`}
-              onClick={() => navigate(item.id)}
+              href={pagePaths[item.id]}
+              aria-current={!missingPage && page === item.id ? "page" : undefined}
+              onClick={event => follow(event, item.id)}
             >
               <Icon name={item.icon} />
               <span>{item.label}</span>
-            </Button>
+            </a>
           ))}
         </nav>
         <div className="sidebar-footer">
@@ -210,14 +237,16 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
       </aside>
       <nav className="mobile-nav" aria-label="Navegación móvil">
         {nav.map((item) => (
-          <Button
+          <a
             key={item.id}
             className={`mobile-nav-item ${page === item.id ? "active" : ""}`}
-            onClick={() => navigate(item.id)}
+            href={pagePaths[item.id]}
+            aria-current={!missingPage && page === item.id ? "page" : undefined}
+            onClick={event => follow(event, item.id)}
           >
             <Icon name={item.icon} size={19} />
             <span>{item.label}</span>
-          </Button>
+          </a>
         ))}
       </nav>
       <main className="main-content">
@@ -226,7 +255,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             <Brand />
           </div>
           <div className="topbar-actions">
-            <label className="toolbar-label">
+            {page !== "calculadora" && <label className="toolbar-label">
               <span>Mes</span>
               <input
                 type="month"
@@ -239,7 +268,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
                 }}
                 aria-label="Mes del resumen"
               />
-            </label>
+            </label>}
             <label className="toolbar-label">
               <span>Moneda</span>
               <select
@@ -273,7 +302,9 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             Actualizando datos…
           </div>
         )}
-        {loading && !accountsLoaded.current ? (
+        {missingPage ? (
+          <div className="page"><h1 className="page-title">Página no encontrada</h1><p>Esta sección no existe.</p><Button className="secondary-button" onClick={() => navigate("dashboard")}>Ir al resumen</Button></div>
+        ) : loading && !accountsLoaded.current ? (
           <EmptyState>
             <span role="status">Cargando tus finanzas…</span>
           </EmptyState>
@@ -289,6 +320,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
         ) : (
           (page === "ajustes" ? (
             <Settings accounts={accounts} onData={load} />
+          ) : page === "calculadora" ? (
+            <Calculator key={currency} currency={currency} accounts={accounts} />
           ) : page === "dashboard" ? (
             overview && <Dashboard
               data={overview}
@@ -307,6 +340,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             />
           ) : (
             overview && <Ledger
+              accounts={accounts}
+              onAccountsChanged={load}
               page={page}
               pendingOnly={pendingOnly}
               setPendingOnly={(value) => {

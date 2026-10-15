@@ -19,6 +19,7 @@ type Account struct {
 	Currency       string `json:"currency"`
 	OpeningBalance string `json:"opening_balance"`
 	Balance        string `json:"balance"`
+	IsInvestment   bool   `json:"is_investment"`
 }
 type Movement struct {
 	ID                int64  `json:"id"`
@@ -80,7 +81,7 @@ func databaseError(w http.ResponseWriter, err error) {
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `SELECT a.id,a.name,a.type,a.currency,a.opening_balance::text,
-        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END),0))::text
+        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END),0))::text,a.is_investment
         FROM accounts a LEFT JOIN movements m ON m.account_id=a.id AND m.user_id=a.user_id
         WHERE a.user_id=1 GROUP BY a.id ORDER BY a.created_at,a.id`)
 	if err != nil {
@@ -91,7 +92,7 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	items := []Account{}
 	for rows.Next() {
 		var a Account
-		if err = rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.OpeningBalance, &a.Balance); err != nil {
+		if err = rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.OpeningBalance, &a.Balance, &a.IsInvestment); err != nil {
 			databaseError(w, err)
 			return
 		}
@@ -123,7 +124,7 @@ func (s *Server) saveAccount(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	var err error
 	if r.Method == http.MethodPost {
-		err = s.db.QueryRow(r.Context(), "INSERT INTO accounts(user_id,name,type,currency,opening_balance) VALUES(1,$1,$2,$3,$4::numeric) RETURNING id", body.Name, body.Type, body.Currency, body.OpeningBalance).Scan(&id)
+		err = s.db.QueryRow(r.Context(), "INSERT INTO accounts(user_id,name,type,currency,opening_balance,is_investment) VALUES(1,$1,$2,$3,$4::numeric,$5) RETURNING id", body.Name, body.Type, body.Currency, body.OpeningBalance, investmentAccountType(body.Type)).Scan(&id)
 	} else {
 		var ok bool
 		id, ok = pathID(w, r)
@@ -147,6 +148,41 @@ func (s *Server) saveAccount(w http.ResponseWriter, r *http.Request) {
 		status = 201
 	}
 	writeJSON(w, status, map[string]int64{"id": id})
+}
+
+func investmentAccountType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "inversión", "inversion", "inversiones", "cuenta de inversión", "cuenta de inversion":
+		return true
+	}
+	return false
+}
+
+func (s *Server) setAccountInvestment(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		IsInvestment *bool `json:"is_investment"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.IsInvestment == nil {
+		fail(w, 400, "Indica si la cuenta es de inversión")
+		return
+	}
+	tag, err := s.db.Exec(r.Context(), "UPDATE accounts SET is_investment=$1 WHERE id=$2 AND user_id=$3", *body.IsInvestment, id, currentUser(r))
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		fail(w, 404, "Cuenta no encontrada")
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {

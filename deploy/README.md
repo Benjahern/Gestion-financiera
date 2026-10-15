@@ -135,6 +135,28 @@ intenta revocación en Google: si falla, revoca desde tu cuenta de Google.
 
 ## Operación y datos
 
+### Redeploy manual después de GitHub Actions
+
+El workflow **Production checks** se ejecuta en las PR hacia `main`, al actualizar
+`main` y manualmente desde Actions. Comprueba privacidad/secretos, TypeScript,
+pruebas de cálculo y navegación, navegador escritorio/móvil con datos sintéticos,
+seguridad de Vite, integración PostgreSQL con race detector, compilación ARM64,
+builds Docker y vulnerabilidades de las imágenes. Las pruebas no usan tus datos
+ni variables de producción; el workflow no despliega ni llama a Coolify.
+
+1. En GitHub, exige el check del job `validate` antes de permitir merges a `main`.
+2. En Coolify, **desactiva Auto Deploy** si quieres controlar el redeploy. Un
+   webhook automático podría arrancar el despliegue antes de terminar Actions.
+3. Después de fusionar la PR, espera a que el workflow de ese commit en `main`
+   termine en verde. Si falla, no despliegues: corrige en otra rama y abre PR.
+4. Pulsa **Redeploy** en Coolify con el último commit validado. Conserva las
+   variables y el volumen actuales. No hace falta introducir tus datos otra vez.
+
+La configuración de calculadora usa una tabla nueva y privada, independiente por
+moneda; guardarla no modifica cuentas o movimientos. Las rutas web son enlaces
+reales y Nginx ya permite recargarlas directamente mediante su fallback SPA.
+
+
 - PostgreSQL persiste en `postgres-data`, gestionado por Coolify. No uses
   `docker compose down -v`, ni recrees/borras el almacenamiento al redeploy.
 - Cambiar `POSTGRES_PASSWORD` en el panel **no cambia** el rol de una base ya

@@ -30,6 +30,10 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `backend/internal/orden/gmail.go` and `mail_parser.go` - Optional encrypted Gmail OAuth, bounded polling and purchase-only parsing
 - `backend/internal/orden/classifier.go` - Lightweight Naive Bayes, editable categories and confirmed training examples
 - `frontend/src/components/Settings.tsx` - Optional Gmail connection, card-to-account rules and category management
+- `frontend/src/components/Calculator.tsx` and `frontend/src/lib/calculator.ts` - Private saved planning configuration and exact minor-unit simulation; never creates financial movements
+- `frontend/src/lib/navigation.ts` - SPA paths, including OAuth return; keep deep links, back/forward and reload working
+- `backend/internal/orden/calculator.go` - Authenticated, CSRF-protected planning preferences per owner/currency
+- `frontend/tests/` - Synthetic calculation/navigation unit tests and Playwright browser checks; never contact production APIs
 - `docker-compose.yml` - Production-only Coolify stack, ARM64/AMD64, no published host ports
 - `frontend/Dockerfile` - Static frontend build and non-root Nginx runtime (no Vite in production)
 - `deploy/README.md` - Coolify runtime variables, ingress, activation, recovery and operations

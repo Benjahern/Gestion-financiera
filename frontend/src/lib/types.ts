@@ -1,5 +1,5 @@
 export type Currency = "CLP" | "USD";
-export type Page = "dashboard" | "gastos" | "ingresos" | "inversiones" | "cuentas" | "ajustes";
+export type Page = "dashboard" | "gastos" | "ingresos" | "inversiones" | "cuentas" | "ajustes" | "calculadora";
 export type Kind = "expense" | "income" | "investment";
 export type Session = { email: string; csrf_token: string };
 export type Account = {
@@ -9,6 +9,7 @@ export type Account = {
   currency: Currency;
   opening_balance: string;
   balance: string;
+  is_investment: boolean;
 };
 export type Movement = {
   id: number;

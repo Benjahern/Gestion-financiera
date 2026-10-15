@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import CategoryPicker from "./CategoryPicker";
+import InvestmentAccounts from "./InvestmentAccounts";
 import {
   money,
   dateLabel,
@@ -393,6 +394,8 @@ export function Accounts({
 }
 
 export function Ledger({
+  accounts,
+  onAccountsChanged,
   page,
   data,
   overview,
@@ -408,7 +411,9 @@ export function Ledger({
   pendingOnly,
   setPendingOnly,
 }: {
-  page: Exclude<Page, "dashboard" | "cuentas" | "ajustes">;
+  page: Exclude<Page, "dashboard" | "cuentas" | "ajustes" | "calculadora">;
+  accounts: Account[];
+  onAccountsChanged: () => Promise<void>;
   data: MovementPage;
   overview: Overview;
   search: string;
@@ -462,7 +467,7 @@ export function Ledger({
           <h1 className="page-title">{config.title}</h1>
           <div className="page-subtitle">
             {monthLabel(overview.month)} · {overview.currency}
-            {config.kind === "investment" && " · Registro de aportes, no rentabilidad de cartera"}
+            {config.kind === "investment" && " · Cuentas e historial de aportes, no rentabilidad de cartera"}
           </div>
         </div>
         <Button
@@ -472,9 +477,22 @@ export function Ledger({
           title={!hasAccounts ? "Primero crea una cuenta" : undefined}
         >
           <Icon name="plus" size={18} />
-          {config.add}
+          {config.kind === "investment" ? "Añadir aporte" : config.add}
         </Button>
       </div>
+      {page === "inversiones" && (
+        <InvestmentAccounts
+          accounts={accounts}
+          currency={overview.currency}
+          onAccountsChanged={onAccountsChanged}
+        />
+      )}
+      {page === "inversiones" && (
+        <SectionHeader
+          title="Historial de aportes"
+          subtitle="Los aportes registrados descuentan saldo de su cuenta de origen; no son el saldo de tus cuentas de inversión."
+        />
+      )}
       <div className="stats-grid ledger-stats">
         <StatCard
           label="Total del mes"

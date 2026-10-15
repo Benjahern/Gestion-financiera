@@ -6,6 +6,7 @@ export type IconName =
   | "income"
   | "investment"
   | "wallet"
+  | "calculator"
   | "plus"
   | "eye"
   | "eyeOff"
@@ -21,6 +22,7 @@ export type IconName =
   | "tag"
   | "close";
 const paths: Record<IconName, ReactNode> = {
+  calculator: <><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8v4H8zM8 14h1m6 0h1m-8 4h1m6 0h1" /></>,
   home: (
     <>
       <path d="M3 10.8 12 3l9 7.8" />
