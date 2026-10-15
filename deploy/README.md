@@ -135,6 +135,14 @@ intenta revocación en Google: si falla, revoca desde tu cuenta de Google.
 
 ## Operación y datos
 
+### Cuenta destacada en el Resumen
+
+En **Cuentas**, marca **Mostrar en Resumen** para ver el saldo actual de esa
+cuenta junto al saldo general. Se guarda una cuenta por moneda; marcar otra
+reemplaza la selección anterior y desmarcarla retira la tarjeta. Respeta ocultar
+saldos y no modifica ni duplica dinero. La migración aditiva `008` añade solo
+esta preferencia; las cuentas existentes empiezan sin selección.
+
 ### Redeploy manual después de GitHub Actions
 
 El workflow **Production checks** se ejecuta en las PR hacia `main`, al actualizar

@@ -333,6 +333,7 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
           ) : page === "cuentas" ? (
             <Accounts
               accounts={accounts}
+              onAccountsChanged={load}
               currency={currency}
               onAdd={() => setForm({ type: "account" })}
               onEdit={(account) => setForm({ type: "account", account })}

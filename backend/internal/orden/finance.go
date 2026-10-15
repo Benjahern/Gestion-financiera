@@ -20,6 +20,7 @@ type Account struct {
 	OpeningBalance string `json:"opening_balance"`
 	Balance        string `json:"balance"`
 	IsInvestment   bool   `json:"is_investment"`
+	ShowInSummary  bool   `json:"show_in_summary"`
 }
 type Movement struct {
 	ID                int64  `json:"id"`
@@ -66,6 +67,10 @@ func databaseError(w http.ResponseWriter, err error) {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
+			if pgErr.ConstraintName == "accounts_summary_currency_key" {
+				fail(w, 409, "Ya hay una cuenta destacada en esa moneda; desmarca Mostrar en Resumen antes de cambiar la moneda")
+				return
+			}
 			fail(w, 409, "Ya existe un registro con ese nombre")
 			return
 		case "23503":
@@ -81,7 +86,7 @@ func databaseError(w http.ResponseWriter, err error) {
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `SELECT a.id,a.name,a.type,a.currency,a.opening_balance::text,
-        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END),0))::text,a.is_investment
+        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END),0))::text,a.is_investment,a.show_in_summary
         FROM accounts a LEFT JOIN movements m ON m.account_id=a.id AND m.user_id=a.user_id
         WHERE a.user_id=1 GROUP BY a.id ORDER BY a.created_at,a.id`)
 	if err != nil {
@@ -92,7 +97,7 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	items := []Account{}
 	for rows.Next() {
 		var a Account
-		if err = rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.OpeningBalance, &a.Balance, &a.IsInvestment); err != nil {
+		if err = rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.OpeningBalance, &a.Balance, &a.IsInvestment, &a.ShowInSummary); err != nil {
 			databaseError(w, err)
 			return
 		}

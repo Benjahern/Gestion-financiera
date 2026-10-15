@@ -47,6 +47,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/auth/logout", s.authenticate(http.HandlerFunc(s.logout)))
 	mux.Handle("POST /api/auth/logout-all", s.authenticate(http.HandlerFunc(s.logoutAll)))
 	mux.Handle("GET /api/accounts", s.authenticate(http.HandlerFunc(s.listAccounts)))
+	mux.Handle("PUT /api/accounts/{id}/summary", s.authenticate(http.HandlerFunc(s.setAccountSummary)))
 	mux.Handle("POST /api/accounts", s.authenticate(http.HandlerFunc(s.saveAccount)))
 	mux.Handle("PUT /api/accounts/{id}", s.authenticate(http.HandlerFunc(s.saveAccount)))
 	mux.Handle("PUT /api/accounts/{id}/investment", s.authenticate(http.HandlerFunc(s.setAccountInvestment)))

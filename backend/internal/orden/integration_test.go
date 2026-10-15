@@ -187,6 +187,9 @@ func TestIntegration(t *testing.T) {
 	t.Run("investment account classification", func(t *testing.T) {
 		testInvestmentClassification(t, request, cookie, auth.CSRF, s.config.Origin, clp, usd)
 	})
+	t.Run("summary account selection", func(t *testing.T) {
+		testAccountSummary(t, db, s, request, cookie, auth.CSRF, s.config.Origin, clp, usd)
+	})
 	recovery, err := IssueCode(ctx, db, "recover")
 	if err != nil {
 		t.Fatal(err)

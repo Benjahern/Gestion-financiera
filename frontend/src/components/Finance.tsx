@@ -4,6 +4,7 @@ import CategoryPicker from "./CategoryPicker";
 import InvestmentAccounts from "./InvestmentAccounts";
 import InvestmentOverview from "./InvestmentOverview";
 import AnnualBalances from "./AnnualBalances";
+import { exactMoney, minor } from "../lib/metrics";
 import {
   money,
   dateLabel,
@@ -83,6 +84,7 @@ export function Dashboard({
 }) {
   const unit = data.currency;
   const selected = accounts.filter((a) => a.currency === unit);
+  const featured = selected.find((a) => a.show_in_summary);
   const maxFlow = Math.max(
     ...data.flow.flatMap((item) => [Number(item.income), Number(item.expense)]),
     1,
@@ -120,10 +122,21 @@ export function Dashboard({
             <span>{selected.length} cuentas · Saldo actual, sin valoración de mercado</span>
           </div>
         </div>
-        <div className="wealth-context">
-          <Icon name="wallet" size={52} />
-          <span>Cada movimiento cuenta.</span>
-        </div>
+        {featured ? (
+          <div className="summary-account" role="region" aria-label="Cuenta destacada">
+            <div className="wealth-label">Tu dinero a mano · {unit}</div>
+            <strong className="summary-account-name">{featured.name}</strong>
+            <div className={`wealth-value ${hidden ? "masked" : ""}`}>
+              {hidden ? "••••••" : exactMoney(minor(featured.balance, unit), unit)}
+            </div>
+            <p>Saldo actual · ya incluido en el saldo general</p>
+          </div>
+        ) : (
+          <div className="wealth-context">
+            <Icon name="wallet" size={52} />
+            <span>Marca una cuenta en Cuentas para verla aquí.</span>
+          </div>
+        )}
       </section>
       <div className="stats-grid">
         <StatCard
@@ -295,13 +308,33 @@ export function Accounts({
   onAdd,
   onEdit,
   onDelete,
+  onAccountsChanged,
 }: {
   accounts: Account[];
   currency: Currency;
   onAdd: () => void;
   onEdit: (account: Account) => void;
   onDelete: (account: Account) => void;
+  onAccountsChanged: () => Promise<void>;
 }) {
+  const [summaryBusy, setSummaryBusy] = useState<number | null>(null);
+  const [summaryError, setSummaryError] = useState("");
+  const selectSummary = async (account: Account, checked: boolean) => {
+    if (summaryBusy !== null) return;
+    setSummaryBusy(account.id);
+    setSummaryError("");
+    try {
+      await api(`/accounts/${account.id}/summary`, {
+        method: "PUT",
+        body: { show_in_summary: checked },
+      });
+      await onAccountsChanged();
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "No se pudo guardar la selección.");
+    } finally {
+      setSummaryBusy(null);
+    }
+  };
   const selected = accounts.filter((a) => a.currency === currency);
   const positiveTotal = selected.reduce((sum, a) => sum + Math.max(0, Number(a.balance)), 0);
   return (
@@ -358,9 +391,23 @@ export function Accounts({
                   <span>{a.currency}</span>
                 </div>
                 <div className="form-note">Inicial: {money(a.opening_balance, a.currency)}</div>
+                <label className="summary-account-check">
+                  <input
+                    type="checkbox"
+                    checked={!!a.show_in_summary}
+                    disabled={summaryBusy !== null}
+                    aria-label={`Mostrar en Resumen: ${a.name}`}
+                    onChange={(e) => void selectSummary(a, e.target.checked)}
+                  />
+                  <span>{summaryBusy === a.id ? "Guardando…" : "Mostrar en Resumen"}</span>
+                </label>
               </section>
             ))}
           </div>
+          <p className="form-note">
+            Una cuenta destacada por moneda. Al marcar otra, reemplaza la anterior sin cambiar saldos ni movimientos.
+          </p>
+          {summaryError && <p className="error-message" role="alert">{summaryError}</p>}
           <section className="panel">
             <SectionHeader
               title="Distribución de fondos"
