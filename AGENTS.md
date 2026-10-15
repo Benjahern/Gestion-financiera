@@ -49,6 +49,7 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `backend/internal/orden/calculator.go` - Authenticated, CSRF-protected planning preferences per owner/currency
 - `backend/internal/orden/annual_balances.go` and `frontend/src/components/AnnualBalances.tsx` - Private manual year-end references, never account adjustments; only compare adjacent years and positive percentage bases
 - `frontend/src/components/InvestmentOverview.tsx` and `frontend/src/lib/metrics.ts` - Exact read-only portfolio totals/distribution by currency; contributions and wealth changes are not investment returns
+- `backend/internal/orden/account_summary.go` - Atomic saved featured-account selection, at most one per owner/currency; updates preferences only, never money. Accounts checkbox and Dashboard card live in `Finance.tsx`; respect balance masking.
 - `frontend/tests/` - Synthetic calculation/navigation unit tests and Playwright browser checks; never contact production APIs
 - `docker-compose.yml` - Production-only Coolify stack, ARM64/AMD64, no published host ports
 - `frontend/Dockerfile` - Static frontend build and non-root Nginx runtime (no Vite in production)

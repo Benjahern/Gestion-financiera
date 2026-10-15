@@ -10,6 +10,7 @@ export type Account = {
   opening_balance: string;
   balance: string;
   is_investment: boolean;
+  show_in_summary: boolean;
 };
 export type Movement = {
   id: number;
