@@ -380,6 +380,27 @@ h1 { margin: 0; }
 .auth-description { color: var(--text-soft); font-size: 13px; line-height: 1.7; margin: 12px 0 24px; }
 .auth-form { display: flex; flex-direction: column; gap: 18px; }
 .calculator-page { max-width: 1280px; }
+.annual-panel { margin: 24px 0; }
+.annual-heading { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+.annual-heading button { flex-shrink:0; }
+.annual-stats { margin:22px 0; }
+.annual-stats .stat-card { background:var(--bg); }
+.annual-table-scroll { overflow-x:auto; max-width:100%; margin:20px 0; }
+.annual-table { width:100%; min-width:700px; border-collapse:collapse; text-align:left; font-size:12px; }
+.annual-table th, .annual-table td { padding:16px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+.annual-table th { font-weight:500; color:var(--text-soft); }
+.annual-table td { white-space:nowrap; }
+.annual-table small { display:block; white-space:nowrap; color:var(--muted); font-size:11px; margin-top:5px; font-weight:400; }
+.annual-current { background:rgba(184,211,176,.05); }
+.annual-form { border:0; padding:0; margin:0; display:grid; gap:18px; }
+.investment-overview { margin-bottom:28px; }
+.investment-overview .stat-value { overflow-wrap:anywhere; }
+.portfolio-position > div:first-child { flex-wrap:wrap; gap:12px; }
+.portfolio-position strong { margin-left:auto; }
+.contribution-list { display:grid; gap:18px; margin:20px 0; }
+.contribution-label { display:flex; justify-content:space-between; gap:12px; font-size:12px; margin-bottom:8px; color:var(--text-soft); }
+.contribution-list .category-track i { display:block; height:100%; background:var(--accent); border-radius:inherit; }
+@media (max-width:600px) { .annual-heading { flex-direction:column; } .annual-heading button { width:100%; } }
 .calculator-badge { align-self: flex-start; padding: 8px 12px; border: 1px solid var(--line); border-radius: 20px; color: var(--accent); font-size: 11px; }
 .calculator-config { display: grid; gap: 22px; }
 .calculator-fieldset { margin: 0; padding-top: 18px; }

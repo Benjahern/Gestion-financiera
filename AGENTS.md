@@ -4,10 +4,24 @@ React + Vite + Tailwind CSS project running inside Figma Make.
 
 ## Development Server
 
-`main` is the production branch. This production bootstrap is explicitly
-authorized on main; all subsequent changes must use a feature/release branch
-and a reviewed pull request. Never commit/push directly to main or deploy
-without explicit authorization. Preserve real data and production volumes.
+`main` is the production branch. All changes must use a feature/release branch
+and a reviewed pull request. Preserve real data and production volumes.
+
+### Standing user authorization: publication workflow
+
+- For user-requested changes, implement on a feature branch, test, commit, push
+  and open a pull request without asking for publication permission again.
+- Review the diff and merge the PR only after all required GitHub Actions checks
+  pass for its latest commit. If checks fail, fix them on the feature branch;
+  never bypass or weaken checks just to merge.
+- After merging, wait for the `main` workflow to pass and notify the user with
+  the validated commit and workflow link so they can redeploy manually.
+- This authorization does NOT permit automatic deployment, production data or
+  volume changes, force-pushes, or unrelated work. Never push changes directly
+  to main outside the reviewed PR workflow.
+- Keep public Git author AND committer identities privacy-safe (GitHub handle
+  and noreply email). Verify merge metadata too; GitHub's default merge identity
+  may expose a personal profile name.
 
 A Vite development server is **already running** on `$PORT` (default 8443). You don't need to start it manually.
 
@@ -33,6 +47,8 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `frontend/src/components/Calculator.tsx` and `frontend/src/lib/calculator.ts` - Private saved planning configuration and exact minor-unit simulation; never creates financial movements
 - `frontend/src/lib/navigation.ts` - SPA paths, including OAuth return; keep deep links, back/forward and reload working
 - `backend/internal/orden/calculator.go` - Authenticated, CSRF-protected planning preferences per owner/currency
+- `backend/internal/orden/annual_balances.go` and `frontend/src/components/AnnualBalances.tsx` - Private manual year-end references, never account adjustments; only compare adjacent years and positive percentage bases
+- `frontend/src/components/InvestmentOverview.tsx` and `frontend/src/lib/metrics.ts` - Exact read-only portfolio totals/distribution by currency; contributions and wealth changes are not investment returns
 - `frontend/tests/` - Synthetic calculation/navigation unit tests and Playwright browser checks; never contact production APIs
 - `docker-compose.yml` - Production-only Coolify stack, ARM64/AMD64, no published host ports
 - `frontend/Dockerfile` - Static frontend build and non-root Nginx runtime (no Vite in production)

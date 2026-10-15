@@ -22,7 +22,7 @@ test("existing accounts can enter and leave investments without changing balance
       expect(request.method()).toBe("GET");
       if (url.pathname === "/api/auth/session") body = { email: "owner@example.invalid", csrf_token: "synthetic-csrf" };
       else if (url.pathname === "/api/accounts") body = accounts;
-      else if (url.pathname === "/api/overview") body = { currency: url.searchParams.get("currency"), month: "2026-01", balance: "0", income: "0", expense: "0", investment: "0", count: 0, categories: [], flow: [] };
+      else if (url.pathname === "/api/overview") body = { currency: url.searchParams.get("currency"), month: "2026-01", balance: "0", income: "0", expense: "0", investment: "25", count: 0, categories: [], flow: [{month:"2025-12",income:"0",expense:"0",investment:"10"},{month:"2026-01",income:"0",expense:"0",investment:"25"}] };
       else if (url.pathname === "/api/movements") body = { items: [], total: 0, offset: 0, limit: 50 };
       else throw new Error(`Unexpected API call: ${url.pathname}`);
     }
@@ -30,11 +30,18 @@ test("existing accounts can enter and leave investments without changing balance
   });
   await page.goto("/inversiones");
   const panel = page.getByRole("region", { name: "Mis cuentas de inversión" });
+  const summary = page.getByRole("region", { name: "Panorama de inversiones" });
+  await expect(summary.locator(".stat-card").filter({ hasText: "Total en inversiones" })).toContainText("250");
+  await expect(summary.locator(".stat-card").filter({ hasText: "De tu dinero total" })).toContainText("71,63%");
+  await expect(summary.getByRole("region",{name:"Evolución de aportes"})).toContainText("25");
+  await page.screenshot({ path:test.info().outputPath("investments.png"),fullPage:true });
   await expect(panel.locator(".account-card")).toContainText("250");
   await expect(panel.getByRole("option", { name: "Synthetic USD · USD" })).toHaveCount(0);
   await panel.getByLabel("Añadir una cuenta existente (CLP)").selectOption("1");
   await panel.getByRole("button", { name: "Añadir a inversiones" }).click();
   await expect(panel.locator(".account-card").filter({ hasText: "Synthetic savings" })).toContainText("99");
+  await expect(summary.locator(".stat-card").filter({ hasText: "Total en inversiones" })).toContainText("349");
+  await expect(summary.locator(".stat-card").filter({ hasText: "De tu dinero total" })).toContainText("100,00%");
   await page.reload();
   await expect(panel.getByText("Synthetic savings", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Quitar Synthetic savings de inversiones sin borrar la cuenta" }).click();

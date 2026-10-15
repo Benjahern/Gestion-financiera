@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import CategoryPicker from "./CategoryPicker";
 import InvestmentAccounts from "./InvestmentAccounts";
+import InvestmentOverview from "./InvestmentOverview";
+import AnnualBalances from "./AnnualBalances";
 import {
   money,
   dateLabel,
@@ -143,6 +145,7 @@ export function Dashboard({
           icon="investment"
         />
       </div>
+      <AnnualBalances key={unit} currency={unit} balance={data.balance} hidden={hidden} />
       <div className="dashboard-grid">
         <section className="panel">
           <SectionHeader
@@ -480,6 +483,9 @@ export function Ledger({
           {config.kind === "investment" ? "Añadir aporte" : config.add}
         </Button>
       </div>
+      {page === "inversiones" && (
+        <InvestmentOverview accounts={accounts} overview={overview} />
+      )}
       {page === "inversiones" && (
         <InvestmentAccounts
           accounts={accounts}
