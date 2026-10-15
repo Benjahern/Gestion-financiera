@@ -156,6 +156,15 @@ La configuración de calculadora usa una tabla nueva y privada, independiente po
 moneda; guardarla no modifica cuentas o movimientos. Las rutas web son enlaces
 reales y Nginx ya permite recargarlas directamente mediante su fallback SPA.
 
+La migración aditiva `007_annual_balances.sql` crea referencias privadas de cierre
+anual. No recalcula ni actualiza dinero de cuentas existentes. Desde Resumen se
+pueden añadir, editar o eliminar cierres anteriores al año actual, uno por año y
+moneda. La comparación usa el cierre del año inmediatamente anterior: no interpola
+años ausentes ni calcula porcentajes con base cero o negativa. La fila actual es
+a la fecha, independiente del mes seleccionado. El cambio incluye ahorro/aportes,
+no representa rentabilidad. Inversiones suma los saldos actuales de cuentas
+clasificadas; ese dinero ya está incluido en Resumen, no se vuelve a sumar.
+
 
 - PostgreSQL persiste en `postgres-data`, gestionado por Coolify. No uses
   `docker compose down -v`, ni recrees/borras el almacenamiento al redeploy.
