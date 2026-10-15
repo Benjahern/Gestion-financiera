@@ -49,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/accounts", s.authenticate(http.HandlerFunc(s.listAccounts)))
 	mux.Handle("POST /api/accounts", s.authenticate(http.HandlerFunc(s.saveAccount)))
 	mux.Handle("PUT /api/accounts/{id}", s.authenticate(http.HandlerFunc(s.saveAccount)))
+	mux.Handle("PUT /api/accounts/{id}/investment", s.authenticate(http.HandlerFunc(s.setAccountInvestment)))
 	mux.Handle("DELETE /api/accounts/{id}", s.authenticate(http.HandlerFunc(s.deleteAccount)))
 	mux.Handle("GET /api/movements", s.authenticate(http.HandlerFunc(s.listMovements)))
 	mux.Handle("POST /api/movements", s.authenticate(http.HandlerFunc(s.saveMovement)))

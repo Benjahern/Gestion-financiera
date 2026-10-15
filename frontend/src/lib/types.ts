@@ -9,6 +9,7 @@ export type Account = {
   currency: Currency;
   opening_balance: string;
   balance: string;
+  is_investment: boolean;
 };
 export type Movement = {
   id: number;

@@ -340,6 +340,8 @@ function Workspace({ onLogout }: { onLogout: () => void }) {
             />
           ) : (
             overview && <Ledger
+              accounts={accounts}
+              onAccountsChanged={load}
               page={page}
               pendingOnly={pendingOnly}
               setPendingOnly={(value) => {
