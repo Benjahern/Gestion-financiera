@@ -52,6 +52,7 @@ export default function Settings({
   const action = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await fn();
       await load();
@@ -145,13 +146,37 @@ export default function Settings({
                           method: "POST",
                         });
                         setNotice(
-                          `${r.imported} compras importadas. Los gastos están pendientes de descripción.`,
+                          r.imported > 0
+                            ? `${r.imported} ${r.imported === 1 ? "compra importada" : "compras importadas"}. Añade su descripción en Gastos.`
+                            : "No se importaron compras nuevas en esta revisión. Consulta los avisos de conexión abajo.",
                         );
                         await onData();
                       })
                     }
                   >
                     Revisar compras ahora
+                  </Button>
+                  <Button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "¿Volver a revisar los avisos desde que conectaste Gmail? No se duplicarán gastos ni se leerán compras anteriores a la conexión.",
+                        )
+                      )
+                        void action(async () => {
+                          const r = await api<{ imported: number }>("/gmail/rescan", {
+                            method: "POST",
+                          });
+                          setNotice(
+                            `Revisión desde la conexión iniciada: ${r.imported} ${r.imported === 1 ? "compra importada" : "compras importadas"} en este lote. Si quedan más avisos, continúa con “Revisar compras ahora” o espera la revisión automática.`,
+                          );
+                          await onData();
+                        });
+                    }}
+                  >
+                    Recuperar compras desde la conexión
                   </Button>
                   <Button
                     className="text-button danger"

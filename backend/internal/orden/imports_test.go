@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,16 @@ func TestImportsIntegration(t *testing.T) {
 	original := googleHTTP
 	defer func() { googleHTTP = original }()
 	calls := 0
+	recoveryMode := false
+	recoveryMessage := testMail()
+	recoveryMessage.InternalDate = fmt.Sprint(time.Now().Add(-24 * time.Hour).UnixMilli())
+	recoveryBody, _ := base64.RawURLEncoding.DecodeString(recoveryMessage.Payload.Body.Data)
+	recoveryMessage.Payload.Body.Data = base64.RawURLEncoding.EncodeToString([]byte(strings.ReplaceAll(string(recoveryBody), "purchase123", "synthetic-recovery-456")))
+	for i := range recoveryMessage.Payload.Headers {
+		if recoveryMessage.Payload.Headers[i].Name == "Authentication-Results" {
+			recoveryMessage.Payload.Headers[i].Value = "mx.google.com; dkim=pass header.i=@mail.machbank.cl; dmarc=pass (p=NONE) header.from=machbank.cl"
+		}
+	}
 	googleHTTP = &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
 		w := httptest.NewRecorder()
@@ -200,7 +211,35 @@ func TestImportsIntegration(t *testing.T) {
 			if !strings.Contains(r.URL.Query().Get("q"), "from:contacto@mail.machbank.cl") {
 				t.Fatal("unfiltered mailbox")
 			}
-			writeJSON(w, 200, map[string]any{"messages": []map[string]string{{"id": "message-1"}, {"id": "duplicate-id"}}})
+			if recoveryMode {
+				var after int64
+				for _, field := range strings.Fields(r.URL.Query().Get("q")) {
+					if strings.HasPrefix(field, "after:") {
+						after, _ = strconv.ParseInt(strings.TrimPrefix(field, "after:"), 10, 64)
+					}
+				}
+				var connected time.Time
+				if err := db.QueryRow(ctx, "SELECT connected_at FROM gmail_connections").Scan(&connected); err != nil || after < connected.Unix() {
+					t.Fatal("rescan must not search before consent", err)
+				}
+				if r.URL.Query().Get("maxResults") != "5" {
+					t.Fatal("unbounded rescan")
+				}
+				received, _ := strconv.ParseInt(recoveryMessage.InternalDate, 10, 64)
+				if after*1000 < received && r.URL.Query().Get("pageToken") == "" {
+					writeJSON(w, 200, map[string]any{"messages": []map[string]string{{"id": "recovered-id"}, {"id": "before-consent-id"}}, "nextPageToken": "recovery-page-two"})
+				} else {
+					writeJSON(w, 200, map[string]any{"messages": []any{}})
+				}
+			} else {
+				writeJSON(w, 200, map[string]any{"messages": []map[string]string{{"id": "message-1"}, {"id": "duplicate-id"}}})
+			}
+		case "/gmail/v1/users/me/messages/recovered-id":
+			writeJSON(w, 200, recoveryMessage)
+		case "/gmail/v1/users/me/messages/before-consent-id":
+			older := recoveryMessage
+			older.InternalDate = fmt.Sprint(time.Now().Add(-72 * time.Hour).UnixMilli())
+			writeJSON(w, 200, older)
 		case "/gmail/v1/users/me/messages/message-1", "/gmail/v1/users/me/messages/duplicate-id":
 			writeJSON(w, 200, testMail())
 		case "/gmail/v1/users/me/messages/gone-id":
@@ -326,6 +365,53 @@ func TestImportsIntegration(t *testing.T) {
 	check(call("POST", "/api/gmail/sync", nil), 200)
 	if err = db.QueryRow(ctx, "SELECT count(*) FROM gmail_pending_messages").Scan(&queued); err != nil || queued != 0 {
 		t.Fatal("deleted retry stalls cursor", queued, err)
+	}
+	// A previously rejected mail is outside the incremental overlap. Explicit
+	// recovery revisits it after consent, paginates, and never duplicates money.
+	recoveryMode = true
+	_, err = db.Exec(ctx, "UPDATE gmail_connections SET connected_at=now()-interval '2 days',scan_after=now(),scan_until=NULL,page_token='',last_sync=NULL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(call("POST", "/api/gmail/sync", nil), 200)
+	if err = db.QueryRow(ctx, "SELECT count(*) FROM movements").Scan(&count); err != nil || count != 0 {
+		t.Fatal("incremental fixture should not find older mail", count, err)
+	}
+	_, _ = db.Exec(ctx, "UPDATE gmail_connections SET last_sync=NULL")
+	recovered := call("POST", "/api/gmail/rescan", nil)
+	check(recovered, 200)
+	var result struct {
+		Imported int `json:"imported"`
+	}
+	if err = json.Unmarshal(recovered.Body.Bytes(), &result); err != nil || result.Imported != 1 {
+		t.Fatal("expected one recovered purchase", err, recovered.Body.String())
+	}
+	check(call("POST", "/api/gmail/rescan", nil), 503) // Throttle also applies to recovery.
+	var pageToken string
+	if err = db.QueryRow(ctx, "SELECT page_token FROM gmail_connections").Scan(&pageToken); err != nil || pageToken != "recovery-page-two" {
+		t.Fatal("recovery pagination not saved", pageToken, err)
+	}
+	_, _ = db.Exec(ctx, "UPDATE gmail_connections SET last_sync=NULL")
+	check(call("POST", "/api/gmail/sync", nil), 200)
+	if err = db.QueryRow(ctx, "SELECT page_token FROM gmail_connections").Scan(&pageToken); err != nil || pageToken != "" {
+		t.Fatal("normal polling did not finish recovery page", pageToken, err)
+	}
+	_, _ = db.Exec(ctx, "UPDATE gmail_connections SET last_sync=NULL")
+	check(call("POST", "/api/gmail/rescan", nil), 200)
+	if err = db.QueryRow(ctx, "SELECT count(*) FROM movements").Scan(&count); err != nil || count != 1 {
+		t.Fatal("rescan duplicated a purchase or imported pre-consent mail", count, err)
+	}
+	for _, withSession := range []bool{false, true} {
+		r := httptest.NewRequest("POST", "/api/gmail/rescan", nil)
+		r.Header.Set("Origin", s.config.Origin)
+		if withSession {
+			r.AddCookie(&http.Cookie{Name: s.cookieName(), Value: token})
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code < 400 {
+			t.Fatal("recovery accepted without session/CSRF")
+		}
 	}
 	check(call("DELETE", "/api/gmail", nil), 200)
 	if err = db.QueryRow(ctx, "SELECT count(*) FROM gmail_connections").Scan(&count); err != nil || count != 0 {
