@@ -390,13 +390,31 @@ func (s *Server) gmailSync(w http.ResponseWriter, r *http.Request) {
 func (s *Server) gmailRescan(w http.ResponseWriter, r *http.Request) {
 	s.gmailSyncRequest(w, r, true)
 }
+
+// Only aggregate counts and date boundaries reach the authenticated owner.
+// No email address, message identifier, header, body or financial value is
+// included, persisted or logged by diagnostics.
+type gmailSyncDiagnostics struct {
+	ConnectedAt     time.Time      `json:"connected_at"`
+	ScanFrom        time.Time      `json:"scan_from"`
+	ScanTo          time.Time      `json:"scan_to"`
+	Found           int            `json:"found"`
+	Checked         int            `json:"checked"`
+	AlreadyImported int            `json:"already_imported"`
+	Unassociated    int            `json:"unassociated"`
+	PendingTotal    int            `json:"pending_total"`
+	Rejected        map[string]int `json:"rejected"`
+	HasMore         bool           `json:"has_more"`
+}
+
 func (s *Server) gmailSyncRequest(w http.ResponseWriter, r *http.Request, rescan bool) {
-	n, err := s.syncGmail(r.Context(), currentUser(r), rescan)
+	var diagnostics gmailSyncDiagnostics
+	n, err := s.syncGmail(r.Context(), currentUser(r), rescan, &diagnostics)
 	if err != nil {
 		fail(w, 503, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]int{"imported": n})
+	writeJSON(w, 200, map[string]any{"imported": n, "diagnostics": diagnostics})
 }
 func (s *Server) RunGmail(ctx context.Context) {
 	if !s.config.gmailEnabled() {
@@ -428,14 +446,18 @@ func (s *Server) pollGmail(ctx context.Context) {
 	rows.Close()
 	for _, user := range users {
 		work, cancel := context.WithTimeout(ctx, 75*time.Second)
-		_, err = s.syncGmail(work, user, false)
+		_, err = s.syncGmail(work, user, false, nil)
 		cancel()
 		if err != nil {
 			_, _ = s.db.Exec(ctx, "UPDATE gmail_connections SET last_error=$1 WHERE user_id=$2", "No se pudo sincronizar; revisa la conexión y las reglas de tarjeta", user)
 		}
 	}
 }
-func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, error) {
+func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool, diagnostics *gmailSyncDiagnostics) (int, error) {
+	stats := gmailSyncDiagnostics{Rejected: map[string]int{}}
+	if diagnostics != nil {
+		defer func() { *diagnostics = stats }()
+	}
 	if !s.config.gmailEnabled() {
 		return 0, errors.New("Gmail no está configurado")
 	}
@@ -503,6 +525,7 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 	if start.Before(connected) {
 		start = connected
 	}
+	stats.ConnectedAt, stats.ScanFrom, stats.ScanTo = connected, start, *until
 	query := url.Values{"maxResults": {"5"}, "q": {fmt.Sprintf("after:%d before:%d from:contacto@mail.machbank.cl subject:(Has hecho una compra)", start.Unix(), until.Unix())}}
 	if page != "" {
 		query.Set("pageToken", page)
@@ -516,6 +539,7 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 	if err = gmailGet(ctx, tokens.Access, "/messages?"+query.Encode(), &list); err != nil {
 		return 0, errors.New("No se pudo leer Gmail; reconecta si el permiso fue revocado")
 	}
+	stats.Found, stats.HasMore = len(list.Messages), list.Next != ""
 	// Retry one unmapped purchase fairly without blocking newer pages. Only
 	// identifiers are persisted, never the body, merchant, or raw email headers.
 	var retry string
@@ -554,18 +578,21 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 		return tx.Commit(ctx)
 	}
 	for _, item := range list.Messages {
+		stats.Checked++
 		messageID := email + ":" + item.ID
 		var exists bool
 		if err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM gmail_imports WHERE user_id=$1 AND message_id=$2)", user, messageID).Scan(&exists); err != nil {
 			return imported, errors.New("No se pudo consultar importaciones")
 		}
 		if exists {
+			stats.AlreadyImported++
 			continue
 		}
 		var m gmailMessage
 		if err = gmailGet(ctx, tokens.Access, "/messages/"+url.PathEscape(item.ID)+"?format=full", &m); err != nil {
 			var responseError *gmailAPIError
 			if errors.As(err, &responseError) && responseError.status == 404 {
+				stats.Rejected["deleted"]++
 				if e := clearPending(item.ID); e != nil {
 					return imported, e
 				}
@@ -573,9 +600,15 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 			}
 			return imported, errors.New("Sincronización incompleta; vuelve a intentarlo")
 		}
-		purchase, ok := parseMACH(m)
+		purchase, reason := parseMACHReason(m)
 		received, dateErr := strconv.ParseInt(m.InternalDate, 10, 64)
-		if !ok || dateErr != nil || received < connected.UnixMilli() {
+		if dateErr != nil {
+			reason = "received_date"
+		} else if received < connected.UnixMilli() {
+			reason = "before_connection"
+		}
+		if reason != "" {
+			stats.Rejected[reason]++
 			unsupported = true
 			if e := clearPending(item.ID); e != nil {
 				return imported, e
@@ -593,6 +626,7 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 		var account int64
 		err = tx.QueryRow(ctx, "SELECT a.id FROM gmail_card_rules r JOIN accounts a ON a.id=r.account_id AND a.user_id=r.user_id WHERE r.user_id=$1 AND r.bank='mach' AND r.last_four=$2 AND a.currency='CLP' FOR UPDATE OF a", user, purchase.LastFour).Scan(&account)
 		if errors.Is(err, pgx.ErrNoRows) {
+			stats.Unassociated++
 			unmapped = true
 			_, e = tx.Exec(ctx, "INSERT INTO gmail_pending_messages(user_id,message_id) VALUES($1,$2) ON CONFLICT(user_id,message_id) DO UPDATE SET last_attempt=now()", user, item.ID)
 			if e == nil {
@@ -620,6 +654,9 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 			return imported, errors.New("No se pudo registrar la compra")
 		}
 		imported += n
+		if n == 0 {
+			stats.AlreadyImported++
+		}
 	}
 	data, _ = json.Marshal(tokens)
 	encrypted, err = s.config.seal(data)
@@ -631,6 +668,7 @@ func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, e
 	if err = conn.QueryRow(ctx, "SELECT count(*) FROM gmail_pending_messages WHERE user_id=$1", user).Scan(&remaining); err != nil {
 		return imported, errors.New("No se pudieron consultar compras pendientes")
 	}
+	stats.PendingTotal = remaining
 	unmapped = unmapped || remaining > 0
 	if unmapped {
 		message = "Hay compras sin cuenta asociada; configura los últimos cuatro dígitos de tu tarjeta"

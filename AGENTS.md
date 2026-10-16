@@ -87,6 +87,7 @@ This project uses **Tailwind CSS v4** through the `@tailwindcss/vite` plugin con
 - All financial endpoints require a session; mutations also require matching Origin and CSRF token.
 - Gmail credentials stay server-side and encrypted; never log or persist raw email bodies. Unknown bank formats must not create movements.
 - MACHBANK accepts Gmail-verified DMARC for exactly machbank.cl or mail.machbank.cl, with the same exact purchase sender. Decode declared MIME charsets before parsing. Explicit `/api/gmail/rescan` recovery is bounded, consent-date limited, deduplicated and continues via normal polling; never reset production cursors manually.
+- Manual Gmail sync/rescan diagnostics return only aggregate counts, fixed rejection codes and scan/consent dates to the authenticated owner. Never include raw bank mail, headers, message IDs, financial values or card digits, and do not persist/log diagnostics. Do not claim a user's import is fixed solely because synthetic parser tests pass.
 - Train only on explicitly confirmed expense categories, never on unconfirmed predictions. Keep inference bounded and local.
 - Run `pnpm typecheck`, `pnpm build`, `go test -race ./...` and `go vet ./...` for relevant changes.
 - Integration tests use `TEST_DATABASE_URL` and an isolated random schema. Never run against production.
