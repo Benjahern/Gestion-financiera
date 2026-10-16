@@ -137,6 +137,14 @@ la deduplicación. Para continuar las páginas usa **Revisar compras ahora** (es
 ni hacer otra compra; reconectar cambia la fecha de inicio. El lector admite
 MIME Latin-1/UTF-8 y DMARC validado por Gmail para los dominios exactos
 `machbank.cl` y `mail.machbank.cl`, manteniendo el remitente exacto permitido.
+Después de una revisión manual, el diagnóstico distingue correos encontrados,
+ya importados, pendientes de asociación y rechazos por etapa (seguridad, contenido,
+campos o fecha anterior a la conexión). Muestra también el período realmente
+consultado y si quedan páginas; estos datos solo se devuelven al propietario
+autenticado, no se guardan ni se registran en logs. No contiene cuerpos, encabezados,
+identificadores de mensajes, montos ni dígitos de tarjetas. Si sigue importando cero,
+comparte el diagnóstico ocultando el correo de la sección de conexión; no copies
+el mensaje bancario completo ni reconectes antes de revisar la fecha de inicio.
 Desconectar borra credenciales locales e
 intenta revocación en Google: si falla, revoca desde tu cuenta de Google.
 

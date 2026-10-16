@@ -4,6 +4,33 @@ import type { Account } from "../lib/types";
 import { Button } from "./ui";
 
 type Category = { id: number; name: string };
+type SyncDiagnostics = {
+  connected_at: string;
+  scan_from: string;
+  scan_to: string;
+  found: number;
+  checked: number;
+  already_imported: number;
+  unassociated: number;
+  pending_total: number;
+  rejected: Record<string, number>;
+  has_more: boolean;
+};
+type SyncResult = { imported: number; diagnostics?: SyncDiagnostics };
+const rejectionLabels: Record<string, string> = {
+  sender: "Remitente no compatible",
+  subject: "Asunto no compatible",
+  authentication: "Validación de seguridad no compatible",
+  body: "No se pudo leer el contenido del aviso",
+  currency: "Moneda no compatible",
+  amount: "Monto ausente, ambiguo o no compatible",
+  card: "No se reconocieron los últimos cuatro dígitos",
+  date: "Fecha de compra ausente o no compatible",
+  purchase_id: "Identificador de compra ausente o ambiguo",
+  received_date: "Fecha de recepción no válida",
+  before_connection: "Correo anterior a la conexión actual",
+  deleted: "Correo eliminado o no disponible",
+};
 type Gmail = {
   configured: boolean;
   connected: boolean;
@@ -23,6 +50,7 @@ export default function Settings({
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastFour, setLastFour] = useState("");
   const [accountID, setAccountID] = useState("");
@@ -53,6 +81,7 @@ export default function Settings({
     setBusy(true);
     setError("");
     setNotice("");
+    setDiagnostics(null);
     try {
       await fn();
       await load();
@@ -101,6 +130,42 @@ export default function Settings({
         </div>
       )}
       {notice && <p role="status">{notice}</p>}
+      {diagnostics && (
+        <section className="panel" aria-label="Diagnóstico de la revisión de Gmail">
+          <h2>Resultado de la revisión de Gmail</h2>
+          <p>
+            Correos encontrados: {diagnostics.found} · Revisados: {diagnostics.checked} · Ya
+            importados: {diagnostics.already_imported} · Sin cuenta asociada en este lote:{" "}
+            {diagnostics.unassociated} · Pendientes de asociación: {diagnostics.pending_total}.
+          </p>
+          <p className="form-note">
+            Conexión actual desde: {new Date(diagnostics.connected_at).toLocaleString("es-CL")}.
+            Período buscado: {new Date(diagnostics.scan_from).toLocaleString("es-CL")} a{" "}
+            {new Date(diagnostics.scan_to).toLocaleString("es-CL")}.
+          </p>
+          {diagnostics.found === 0 && (
+            <p>
+              Gmail no devolvió avisos nuevos que coincidan con el remitente y asunto compatibles
+              dentro de este período. Comprueba si el correo llegó después de la fecha de conexión
+              actual y al Gmail conectado. Esto no significa que falte una descripción.
+            </p>
+          )}
+          <ul>
+            {Object.entries(rejectionLabels).map(([reason, label]) =>
+              diagnostics.rejected[reason] > 0 ? (
+                <li key={reason}>{label}: {diagnostics.rejected[reason]}.</li>
+              ) : null,
+            )}
+          </ul>
+          <p className="form-note">
+            {diagnostics.has_more
+              ? "Quedan páginas por revisar. Espera 30 segundos y usa “Revisar compras ahora”, o espera la revisión automática."
+              : "No quedan más páginas en esta búsqueda."}{" "}
+            Este diagnóstico contiene solo cantidades, fechas y motivos; no incluye el contenido de
+            tus correos.
+          </p>
+        </section>
+      )}
       <section className="panel">
         <h2>Gmail · conexión opcional</h2>
         <p className="form-note">
@@ -142,13 +207,14 @@ export default function Settings({
                     disabled={busy}
                     onClick={() =>
                       void action(async () => {
-                        const r = await api<{ imported: number }>("/gmail/sync", {
+                        const r = await api<SyncResult>("/gmail/sync", {
                           method: "POST",
                         });
+                        setDiagnostics(r.diagnostics ?? null);
                         setNotice(
                           r.imported > 0
                             ? `${r.imported} ${r.imported === 1 ? "compra importada" : "compras importadas"}. Añade su descripción en Gastos.`
-                            : "No se importaron compras nuevas en esta revisión. Consulta los avisos de conexión abajo.",
+                            : "No se importaron compras nuevas en esta revisión. Consulta el resultado de la revisión y los avisos de conexión.",
                         );
                         await onData();
                       })
@@ -166,9 +232,10 @@ export default function Settings({
                         )
                       )
                         void action(async () => {
-                          const r = await api<{ imported: number }>("/gmail/rescan", {
+                          const r = await api<SyncResult>("/gmail/rescan", {
                             method: "POST",
                           });
+                          setDiagnostics(r.diagnostics ?? null);
                           setNotice(
                             `Revisión desde la conexión iniciada: ${r.imported} ${r.imported === 1 ? "compra importada" : "compras importadas"} en este lote. Si quedan más avisos, continúa con “Revisar compras ahora” o espera la revisión automática.`,
                           );

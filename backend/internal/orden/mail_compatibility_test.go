@@ -96,3 +96,27 @@ func TestMACHStillRequiresExactSender(t *testing.T) {
 		t.Fatal("ARC-only authentication accepted")
 	}
 }
+
+func TestMACHDiagnosticReasons(t *testing.T) {
+	for _, tc := range []struct{ field, replacement, reason string }{
+		{"Monto pagado", "Unknown amount field", "amount"},
+		{"Últimos 4 dígitos de la tarjeta", "Unknown card field", "card"},
+		{"Fecha y hora", "Unknown date field", "date"},
+		{"Nr. identificador de la compra", "Unknown identifier field", "purchase_id"},
+		{"$4.000", "US$4.000 USD", "currency"},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			m := testMail()
+			body, _ := base64.RawURLEncoding.DecodeString(m.Payload.Body.Data)
+			m.Payload.Body.Data = base64.RawURLEncoding.EncodeToString([]byte(strings.ReplaceAll(string(body), tc.field, tc.replacement)))
+			if _, reason := parseMACHReason(m); reason != tc.reason {
+				t.Fatalf("got reason %q, want fixed code %q", reason, tc.reason)
+			}
+		})
+	}
+	m := testMail()
+	m.Payload.Body.Data = ""
+	if _, reason := parseMACHReason(m); reason != "body" {
+		t.Fatalf("missing body reason: %q", reason)
+	}
+}

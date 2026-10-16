@@ -285,7 +285,30 @@ func TestImportsIntegration(t *testing.T) {
 	}
 	// An unmapped purchase is queued, not allowed to stall the incremental cursor.
 	_, _ = db.Exec(ctx, "DELETE FROM gmail_card_rules")
-	check(call("POST", "/api/gmail/sync", nil), 200)
+	readDiagnostics := func(w *httptest.ResponseRecorder) gmailSyncDiagnostics {
+		t.Helper()
+		var result struct {
+			Diagnostics gmailSyncDiagnostics `json:"diagnostics"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Diagnostics.Rejected == nil {
+			t.Fatal("missing diagnostics")
+		}
+		data, _ := json.Marshal(result.Diagnostics)
+		for _, private := range []string{testOwnerEmail, "message-1", "purchase123", "NO DEBE GUARDARSE", `"amount"`, `"last_four"`, "access-test", "refresh-test"} {
+			if strings.Contains(string(data), private) {
+				t.Fatal("diagnostics included private content")
+			}
+		}
+		return result.Diagnostics
+	}
+	unmappedResponse := call("POST", "/api/gmail/sync", nil)
+	check(unmappedResponse, 200)
+	if d := readDiagnostics(unmappedResponse); d.Found != 2 || d.Checked != 2 || d.Unassociated != 2 || d.PendingTotal != 2 || d.HasMore || len(d.Rejected) != 0 {
+		t.Fatal("unmapped diagnostics", d)
+	}
 	var queued int
 	var scanAfter *time.Time
 	if err = db.QueryRow(ctx, "SELECT count(*) FROM gmail_pending_messages").Scan(&queued); err != nil || queued != 2 {
@@ -373,13 +396,20 @@ func TestImportsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	check(call("POST", "/api/gmail/sync", nil), 200)
+	emptyResponse := call("POST", "/api/gmail/sync", nil)
+	check(emptyResponse, 200)
 	if err = db.QueryRow(ctx, "SELECT count(*) FROM movements").Scan(&count); err != nil || count != 0 {
 		t.Fatal("incremental fixture should not find older mail", count, err)
+	}
+	if d := readDiagnostics(emptyResponse); d.Found != 0 || d.Checked != 0 || d.ScanFrom.Before(d.ConnectedAt) || !d.ScanTo.After(d.ScanFrom) {
+		t.Fatal("empty scan diagnostics", d)
 	}
 	_, _ = db.Exec(ctx, "UPDATE gmail_connections SET last_sync=NULL")
 	recovered := call("POST", "/api/gmail/rescan", nil)
 	check(recovered, 200)
+	if d := readDiagnostics(recovered); d.Found != 2 || d.Checked != 2 || d.AlreadyImported != 0 || d.Rejected["before_connection"] != 1 || !d.HasMore || !d.ScanFrom.Equal(d.ConnectedAt) {
+		t.Fatal("recovery diagnostics", d)
+	}
 	var result struct {
 		Imported int `json:"imported"`
 	}

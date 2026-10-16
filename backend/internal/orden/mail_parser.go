@@ -136,38 +136,56 @@ var purchaseRE = regexp.MustCompile(`(?i)Nr\.? identificador de la compra\s*([a-
 var dmarcRE = regexp.MustCompile(`(?i)(?:^|;)\s*dmarc=pass\b[^;]*\bheader\.from=(?:mail\.)?machbank\.cl(?:\s|;|$)`)
 
 func parseMACH(m gmailMessage) (Purchase, bool) {
+	p, reason := parseMACHReason(m)
+	return p, reason == ""
+}
+
+// Reasons are fixed, non-sensitive codes. Never return header/body fragments.
+func parseMACHReason(m gmailMessage) (Purchase, string) {
 	var p Purchase
 	from, err := mail.ParseAddress(header(m.Payload, "From"))
 	if err != nil || !strings.EqualFold(from.Address, "contacto@mail.machbank.cl") {
-		return p, false
+		return p, "sender"
 	}
 	subject, err := new(mime.WordDecoder).DecodeHeader(header(m.Payload, "Subject"))
 	if err != nil {
-		return p, false
+		return p, "subject"
 	}
 	if subject != "Has hecho una compra con tu Tarjeta de Crédito MACHBANK" {
-		return p, false
+		return p, "subject"
 	}
 	// Only the receiving Gmail server's authentication result is accepted.
 	auth := header(m.Payload, "Authentication-Results")
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(auth)), "mx.google.com;") || !dmarcRE.MatchString(auth) {
-		return p, false
+		return p, "authentication"
 	}
 	body := mailBody(m.Payload, 0)
+	if body == "" {
+		return p, "body"
+	}
 	if strings.Contains(strings.ToUpper(body), "USD") || strings.Contains(strings.ToUpper(body), "US$") {
-		return p, false
+		return p, "currency"
 	}
 	amount, card, date, id := amountRE.FindAllStringSubmatch(body, -1), cardRE.FindAllStringSubmatch(body, -1), dateRE.FindAllStringSubmatch(body, -1), purchaseRE.FindAllStringSubmatch(body, -1)
-	if len(amount) != 1 || len(card) != 1 || len(date) != 1 || len(id) != 1 {
-		return p, false
+	if len(amount) != 1 {
+		return p, "amount"
+	}
+	if len(card) != 1 {
+		return p, "card"
+	}
+	if len(date) != 1 {
+		return p, "date"
+	}
+	if len(id) != 1 {
+		return p, "purchase_id"
 	}
 	d, err := time.Parse("02/01/2006", date[0][1])
 	if err != nil || d.After(time.Now().Add(48*time.Hour)) || d.Year() < 2020 {
-		return p, false
+		return p, "date"
 	}
 	p = Purchase{ID: id[0][1], Amount: strings.ReplaceAll(amount[0][1], ".", ""), Date: d.Format("2006-01-02"), LastFour: card[0][1]}
 	if !validMoney(p.Amount, "CLP", true) {
-		return Purchase{}, false
+		return Purchase{}, "amount"
 	}
-	return p, true
+	return p, ""
 }
