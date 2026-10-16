@@ -129,8 +129,15 @@ Orden solo importa compras MACH compatibles y autenticadas recibidas después de
 conectar. Guarda identificadores para deduplicar incluso tras borrar un gasto;
 no almacena el correo ni el comercio. Las compras sin cuenta se reintentan sin
 bloquear páginas nuevas. Hay polling cada cinco minutos, cursor incremental y
-solapamiento de cinco minutos para indexación tardía; un retraso de indexación
-mayor necesita revisión/reconexión. Desconectar borra credenciales locales e
+solapamiento de cinco minutos para indexación tardía. Si un aviso compatible fue
+descartado o se indexó tarde, usa **Recuperar compras desde la conexión** una vez:
+revisa lotes de hasta cinco avisos, nunca anteriores al consentimiento, y conserva
+la deduplicación. Para continuar las páginas usa **Revisar compras ahora** (espera
+30 segundos entre revisiones) o el polling automático. No hace falta reconectar
+ni hacer otra compra; reconectar cambia la fecha de inicio. El lector admite
+MIME Latin-1/UTF-8 y DMARC validado por Gmail para los dominios exactos
+`machbank.cl` y `mail.machbank.cl`, manteniendo el remitente exacto permitido.
+Desconectar borra credenciales locales e
 intenta revocación en Google: si falla, revoca desde tu cuenta de Google.
 
 ## Operación y datos

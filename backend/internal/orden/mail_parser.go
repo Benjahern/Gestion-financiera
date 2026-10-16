@@ -1,7 +1,9 @@
 package orden
 
 import (
+	"bytes"
 	"encoding/base64"
+	"io"
 	"mime"
 	"net/mail"
 	"regexp"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/charset"
 )
 
 type gmailHeader struct {
@@ -85,6 +88,24 @@ func mailBody(p gmailPart, depth int) string {
 		if err != nil {
 			return ""
 		}
+		// Gmail removes transfer encoding, but MIME text may still use a legacy
+		// charset. Decode it before matching accented purchase field names.
+		if contentType := header(p, "Content-Type"); contentType != "" {
+			_, params, err := mime.ParseMediaType(contentType)
+			if err != nil {
+				return ""
+			}
+			if label := params["charset"]; label != "" {
+				reader, err := charset.NewReaderLabel(label, bytes.NewReader(data))
+				if err != nil {
+					return ""
+				}
+				data, err = io.ReadAll(io.LimitReader(reader, (4<<20)+1))
+				if err != nil || len(data) > 4<<20 {
+					return ""
+				}
+			}
+		}
 		if p.Mime == "text/html" {
 			return plainHTML(string(data))
 		}
@@ -109,7 +130,10 @@ var amountRE = regexp.MustCompile(`(?i)Monto pagado\s*\$\s*([0-9]{1,3}(?:\.[0-9]
 var cardRE = regexp.MustCompile(`(?i)Últimos 4 dígitos de la tarjeta\s*([0-9]{4})(?:\s|$)`)
 var dateRE = regexp.MustCompile(`(?i)Fecha y hora\s*([0-9]{2}/[0-9]{2}/[0-9]{4})\s*-\s*[0-9]{2}:[0-9]{2}`)
 var purchaseRE = regexp.MustCompile(`(?i)Nr\.? identificador de la compra\s*([a-z0-9_-]{4,80})(?:\s|$)`)
-var dmarcRE = regexp.MustCompile(`(?i)dmarc=pass\b[^;]*\bheader\.from=mail\.machbank\.cl(?:\s|;|$)`)
+
+// Gmail can report the aligned organizational domain rather than the exact
+// sender subdomain. Keep this an explicit allowlist, not a suffix match.
+var dmarcRE = regexp.MustCompile(`(?i)(?:^|;)\s*dmarc=pass\b[^;]*\bheader\.from=(?:mail\.)?machbank\.cl(?:\s|;|$)`)
 
 func parseMACH(m gmailMessage) (Purchase, bool) {
 	var p Purchase

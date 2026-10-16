@@ -86,6 +86,7 @@ This project uses **Tailwind CSS v4** through the `@tailwindcss/vite` plugin con
 - Production requires HTTPS and INTERNAL_PROXY_SECRET; trust client IP only from the authenticated internal proxy. Do not expose API/PostgreSQL ports.
 - All financial endpoints require a session; mutations also require matching Origin and CSRF token.
 - Gmail credentials stay server-side and encrypted; never log or persist raw email bodies. Unknown bank formats must not create movements.
+- MACHBANK accepts Gmail-verified DMARC for exactly machbank.cl or mail.machbank.cl, with the same exact purchase sender. Decode declared MIME charsets before parsing. Explicit `/api/gmail/rescan` recovery is bounded, consent-date limited, deduplicated and continues via normal polling; never reset production cursors manually.
 - Train only on explicitly confirmed expense categories, never on unconfirmed predictions. Keep inference bounded and local.
 - Run `pnpm typecheck`, `pnpm build`, `go test -race ./...` and `go vet ./...` for relevant changes.
 - Integration tests use `TEST_DATABASE_URL` and an isolated random schema. Never run against production.

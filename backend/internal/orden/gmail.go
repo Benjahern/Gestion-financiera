@@ -85,6 +85,7 @@ func (s *Server) importRoutes(mux *http.ServeMux) {
 		"GET /api/categories": s.categories, "POST /api/categories": s.saveCategory, "PUT /api/categories/{id}": s.saveCategory, "DELETE /api/categories/{id}": s.deleteCategory,
 		"POST /api/classifier/predict": s.prediction, "GET /api/gmail": s.gmailStatus, "POST /api/gmail/connect": s.gmailConnect,
 		"DELETE /api/gmail": s.gmailDisconnect, "POST /api/gmail/sync": s.gmailSync, "POST /api/gmail/rules": s.gmailRule, "DELETE /api/gmail/rules/{id}": s.deleteGmailRule,
+		"POST /api/gmail/rescan": s.gmailRescan,
 	} {
 		mux.Handle(pattern, s.authenticate(handler))
 	}
@@ -384,7 +385,13 @@ func (s *Server) deleteGmailRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 func (s *Server) gmailSync(w http.ResponseWriter, r *http.Request) {
-	n, err := s.syncGmail(r.Context(), currentUser(r))
+	s.gmailSyncRequest(w, r, false)
+}
+func (s *Server) gmailRescan(w http.ResponseWriter, r *http.Request) {
+	s.gmailSyncRequest(w, r, true)
+}
+func (s *Server) gmailSyncRequest(w http.ResponseWriter, r *http.Request, rescan bool) {
+	n, err := s.syncGmail(r.Context(), currentUser(r), rescan)
 	if err != nil {
 		fail(w, 503, err.Error())
 		return
@@ -421,14 +428,14 @@ func (s *Server) pollGmail(ctx context.Context) {
 	rows.Close()
 	for _, user := range users {
 		work, cancel := context.WithTimeout(ctx, 75*time.Second)
-		_, err = s.syncGmail(work, user)
+		_, err = s.syncGmail(work, user, false)
 		cancel()
 		if err != nil {
 			_, _ = s.db.Exec(ctx, "UPDATE gmail_connections SET last_error=$1 WHERE user_id=$2", "No se pudo sincronizar; revisa la conexión y las reglas de tarjeta", user)
 		}
 	}
 }
-func (s *Server) syncGmail(ctx context.Context, user int64) (int, error) {
+func (s *Server) syncGmail(ctx context.Context, user int64, rescan bool) (int, error) {
 	if !s.config.gmailEnabled() {
 		return 0, errors.New("Gmail no está configurado")
 	}
@@ -461,6 +468,13 @@ func (s *Server) syncGmail(ctx context.Context, user int64) (int, error) {
 	}
 	if last != nil && time.Since(*last) < 30*time.Second {
 		return 0, errors.New("Espera 30 segundos entre sincronizaciones")
+	}
+	// Explicit recovery revisits only mail since consent. Keep the same bounded
+	// pages, generation guard and import deduplication as normal polling. The
+	// new cursor is committed only after processing succeeds; polling continues
+	// any remaining pages without repeatedly restarting the scan.
+	if rescan {
+		since, until, page = connected, nil, ""
 	}
 	data, err := s.config.unseal(encrypted)
 	if err != nil {
