@@ -53,7 +53,8 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = tx.QueryRow(r.Context(), `SELECT (COALESCE((SELECT sum(opening_balance) FROM accounts WHERE user_id=1 AND currency=$1),0)
-        +COALESCE((SELECT sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END) FROM movements m JOIN accounts a ON a.id=m.account_id AND a.user_id=m.user_id WHERE m.user_id=1 AND a.currency=$1),0))::text`, currency).Scan(&out.Balance)
+	        +COALESCE((SELECT sum(CASE WHEN m.kind='income' THEN m.amount WHEN m.kind='investment' AND m.investment_mode='contribution' THEN m.amount ELSE -m.amount END) FROM movements m JOIN accounts a ON a.id=m.account_id AND a.user_id=m.user_id WHERE m.user_id=1 AND a.currency=$1),0)
+	        -COALESCE((SELECT sum(m.amount) FROM movements m JOIN accounts a ON a.id=m.source_account_id AND a.user_id=m.user_id WHERE m.user_id=1 AND a.currency=$1),0))::text`, currency).Scan(&out.Balance)
 	if err != nil {
 		databaseError(w, err)
 		return

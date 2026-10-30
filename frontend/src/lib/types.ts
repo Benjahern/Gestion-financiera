@@ -1,5 +1,12 @@
 export type Currency = "CLP" | "USD";
-export type Page = "dashboard" | "gastos" | "ingresos" | "inversiones" | "cuentas" | "ajustes" | "calculadora";
+export type Page =
+  | "dashboard"
+  | "gastos"
+  | "ingresos"
+  | "inversiones"
+  | "cuentas"
+  | "ajustes"
+  | "calculadora";
 export type Kind = "expense" | "income" | "investment";
 export type Session = { email: string; csrf_token: string };
 export type Account = {
@@ -16,6 +23,9 @@ export type Movement = {
   id: number;
   account_id: number;
   account: string;
+  source_account_id?: number | null;
+  source_account?: string;
+  investment_mode?: "legacy_outflow" | "contribution";
   currency: Currency;
   title: string;
   category: string;
