@@ -26,6 +26,9 @@ type Movement struct {
 	ID                int64  `json:"id"`
 	AccountID         int64  `json:"account_id"`
 	Account           string `json:"account"`
+	SourceAccountID   *int64 `json:"source_account_id,omitempty"`
+	SourceAccount     string `json:"source_account,omitempty"`
+	InvestmentMode    string `json:"investment_mode"`
 	Currency          string `json:"currency"`
 	Title             string `json:"title"`
 	Category          string `json:"category"`
@@ -86,7 +89,8 @@ func databaseError(w http.ResponseWriter, err error) {
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `SELECT a.id,a.name,a.type,a.currency,a.opening_balance::text,
-        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount ELSE -m.amount END),0))::text,a.is_investment,a.show_in_summary
+	        (a.opening_balance+COALESCE(sum(CASE WHEN m.kind='income' THEN m.amount WHEN m.kind='investment' AND m.investment_mode='contribution' THEN m.amount ELSE -m.amount END),0)
+	        -COALESCE((SELECT sum(sm.amount) FROM movements sm WHERE sm.source_account_id=a.id AND sm.user_id=a.user_id),0))::text,a.is_investment,a.show_in_summary
         FROM accounts a LEFT JOIN movements m ON m.account_id=a.id AND m.user_id=a.user_id
         WHERE a.user_id=1 GROUP BY a.id ORDER BY a.created_at,a.id`)
 	if err != nil {
@@ -137,7 +141,7 @@ func (s *Server) saveAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tag, e := s.db.Exec(r.Context(), `UPDATE accounts SET name=$1,type=$2,currency=$3,opening_balance=$4::numeric
-            WHERE id=$5 AND user_id=1 AND (currency=$3 OR (NOT EXISTS(SELECT 1 FROM movements WHERE account_id=$5) AND NOT EXISTS(SELECT 1 FROM gmail_card_rules WHERE account_id=$5)))`, body.Name, body.Type, body.Currency, body.OpeningBalance, id)
+	            WHERE id=$5 AND user_id=1 AND (currency=$3 OR (NOT EXISTS(SELECT 1 FROM movements WHERE account_id=$5 OR source_account_id=$5) AND NOT EXISTS(SELECT 1 FROM gmail_card_rules WHERE account_id=$5)))`, body.Name, body.Type, body.Currency, body.OpeningBalance, id)
 		err = e
 		if err == nil && tag.RowsAffected() == 0 {
 			fail(w, 409, "Cuenta inexistente o moneda bloqueada por movimientos o tarjetas vinculadas")
@@ -210,6 +214,8 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveMovement(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		AccountID         int64  `json:"account_id"`
+		SourceAccountID   *int64 `json:"source_account_id"`
+		InvestmentMode    string `json:"investment_mode"`
 		Title             string `json:"title"`
 		Category          string `json:"category"`
 		Date              string `json:"date"`
@@ -222,23 +228,77 @@ func (s *Server) saveMovement(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Title = strings.TrimSpace(body.Title)
 	body.Category = strings.TrimSpace(body.Category)
+	if body.Kind == "investment" && body.InvestmentMode == "" {
+		body.InvestmentMode = "legacy_outflow"
+	}
+	if body.Kind != "investment" {
+		body.InvestmentMode = "legacy_outflow"
+	}
 	_, dateErr := time.Parse("2006-01-02", body.Date)
-	if body.AccountID <= 0 || !validText(body.Title, 150) || !validText(body.Category, 100) || dateErr != nil || (body.Kind != "expense" && body.Kind != "income" && body.Kind != "investment") {
+	if body.AccountID <= 0 || !validText(body.Title, 150) || !validText(body.Category, 100) || dateErr != nil || (body.Kind != "expense" && body.Kind != "income" && body.Kind != "investment") || (body.Kind == "investment" && body.InvestmentMode != "legacy_outflow" && body.InvestmentMode != "contribution") || (body.Kind != "investment" && body.SourceAccountID != nil) {
 		fail(w, 400, "Datos del movimiento inválidos")
 		return
 	}
-	// Lock the account while validating its currency; concurrent account edits
-	// cannot change currency between validation and insertion.
+	if body.InvestmentMode != "contribution" && body.SourceAccountID != nil {
+		fail(w, 400, "El origen solo se admite en nuevos aportes de inversión")
+		return
+	}
+	if body.SourceAccountID != nil && (*body.SourceAccountID <= 0 || *body.SourceAccountID == body.AccountID) {
+		fail(w, 400, "Selecciona cuentas distintas para origen y destino")
+		return
+	}
+	// Lock both accounts in ID order to avoid deadlocks and prevent currency changes.
 	tx, err := s.db.Begin(r.Context())
 	if err != nil {
 		databaseError(w, err)
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var currency string
-	if err = tx.QueryRow(r.Context(), "SELECT currency FROM accounts WHERE id=$1 AND user_id=1 FOR UPDATE", body.AccountID).Scan(&currency); err != nil {
+	accountIDs := []int64{body.AccountID}
+	if body.SourceAccountID != nil {
+		accountIDs = append(accountIDs, *body.SourceAccountID)
+	}
+	rows, err := tx.Query(r.Context(), "SELECT id,currency,is_investment FROM accounts WHERE user_id=$1 AND id=ANY($2) ORDER BY id FOR UPDATE", currentUser(r), accountIDs)
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	accountCurrencies := map[int64]string{}
+	investmentDestination := false
+	for rows.Next() {
+		var accountID int64
+		var accountCurrency string
+		var isInvestment bool
+		if err = rows.Scan(&accountID, &accountCurrency, &isInvestment); err != nil {
+			rows.Close()
+			databaseError(w, err)
+			return
+		}
+		accountCurrencies[accountID] = accountCurrency
+		if accountID == body.AccountID {
+			investmentDestination = isInvestment
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		databaseError(w, err)
+		return
+	}
+	rows.Close()
+	currency, accountExists := accountCurrencies[body.AccountID]
+	if !accountExists {
 		fail(w, 400, "Selecciona una cuenta válida")
 		return
+	}
+	if body.InvestmentMode == "contribution" {
+		if !investmentDestination {
+			fail(w, 400, "Selecciona una cuenta de inversión como destino")
+			return
+		}
+		if body.SourceAccountID != nil && accountCurrencies[*body.SourceAccountID] != currency {
+			fail(w, 400, "El origen y el destino deben usar la misma moneda")
+			return
+		}
 	}
 	if !validMoney(body.Amount, currency, true) {
 		fail(w, 400, "Importe inválido: CLP sin decimales, USD con hasta dos decimales")
@@ -246,14 +306,14 @@ func (s *Server) saveMovement(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if r.Method == http.MethodPost {
-		err = tx.QueryRow(r.Context(), "INSERT INTO movements(user_id,account_id,title,category,date,amount,kind) VALUES(1,$1,$2,$3,$4::date,$5::numeric,$6) RETURNING id", body.AccountID, body.Title, body.Category, body.Date, body.Amount, body.Kind).Scan(&id)
+		err = tx.QueryRow(r.Context(), "INSERT INTO movements(user_id,account_id,source_account_id,investment_mode,title,category,date,amount,kind) VALUES(1,$1,$2,$3,$4,$5,$6::date,$7::numeric,$8) RETURNING id", body.AccountID, body.SourceAccountID, body.InvestmentMode, body.Title, body.Category, body.Date, body.Amount, body.Kind).Scan(&id)
 	} else {
 		var ok bool
 		id, ok = pathID(w, r)
 		if !ok {
 			return
 		}
-		tag, e := tx.Exec(r.Context(), "UPDATE movements SET account_id=$1,title=$2,category=$3,date=$4::date,amount=$5::numeric,kind=$6 WHERE id=$7 AND user_id=1", body.AccountID, body.Title, body.Category, body.Date, body.Amount, body.Kind, id)
+		tag, e := tx.Exec(r.Context(), "UPDATE movements SET account_id=$1,source_account_id=$2,investment_mode=$3,title=$4,category=$5,date=$6::date,amount=$7::numeric,kind=$8 WHERE id=$9 AND user_id=1", body.AccountID, body.SourceAccountID, body.InvestmentMode, body.Title, body.Category, body.Date, body.Amount, body.Kind, id)
 		err = e
 		if err == nil && tag.RowsAffected() == 0 {
 			fail(w, 404, "Movimiento no encontrado")
@@ -346,7 +406,8 @@ func (s *Server) listMovements(w http.ResponseWriter, r *http.Request) {
 	}
 	search = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(search)
 	args := []any{kind, currency, category, from, to, search, q.Get("pending") == "true"}
-	where := ` FROM movements m JOIN accounts a ON a.id=m.account_id AND a.user_id=m.user_id WHERE m.user_id=1
+	where := ` FROM movements m JOIN accounts a ON a.id=m.account_id AND a.user_id=m.user_id
+        LEFT JOIN accounts sa ON sa.id=m.source_account_id AND sa.user_id=m.user_id WHERE m.user_id=1
         AND ($1='' OR m.kind=$1) AND ($2='' OR a.currency=$2) AND ($3='' OR m.category=$3)
         AND m.date >= $4::date AND m.date < $5::date AND ($6='' OR m.title ILIKE '%' || $6 || '%') AND (NOT $7::boolean OR m.pending)`
 	var total int
@@ -355,7 +416,7 @@ func (s *Server) listMovements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args = append(args, limit, offset)
-	rows, err := s.db.Query(r.Context(), "SELECT m.id,m.account_id,a.name,a.currency,m.title,m.category,m.date::text,m.amount::text,m.kind,m.pending,m.category_confirmed"+where+" ORDER BY m.date DESC,m.id DESC LIMIT $8 OFFSET $9", args...)
+	rows, err := s.db.Query(r.Context(), "SELECT m.id,m.account_id,a.name,a.currency,m.source_account_id,COALESCE(sa.name,''),m.investment_mode,m.title,m.category,m.date::text,m.amount::text,m.kind,m.pending,m.category_confirmed"+where+" ORDER BY m.date DESC,m.id DESC LIMIT $8 OFFSET $9", args...)
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -364,7 +425,7 @@ func (s *Server) listMovements(w http.ResponseWriter, r *http.Request) {
 	items := []Movement{}
 	for rows.Next() {
 		var m Movement
-		if err = rows.Scan(&m.ID, &m.AccountID, &m.Account, &m.Currency, &m.Title, &m.Category, &m.Date, &m.Amount, &m.Kind, &m.Pending, &m.CategoryConfirmed); err != nil {
+		if err = rows.Scan(&m.ID, &m.AccountID, &m.Account, &m.Currency, &m.SourceAccountID, &m.SourceAccount, &m.InvestmentMode, &m.Title, &m.Category, &m.Date, &m.Amount, &m.Kind, &m.Pending, &m.CategoryConfirmed); err != nil {
 			databaseError(w, err)
 			return
 		}

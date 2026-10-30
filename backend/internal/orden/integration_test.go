@@ -170,6 +170,39 @@ func TestIntegration(t *testing.T) {
 	if overview.Balance != "19.80" || overview.Expense != "0.30" {
 		t.Fatalf("decimal precision: %+v", overview)
 	}
+	var destination int64
+	if err = db.QueryRow(ctx, "INSERT INTO accounts(user_id,name,type,currency,opening_balance,is_investment) VALUES(1,'Synthetic destination','Inversión','CLP',0,true) RETURNING id").Scan(&destination); err != nil {
+		t.Fatal(err)
+	}
+	transfer := map[string]any{"account_id": destination, "source_account_id": clp, "investment_mode": "contribution", "amount": "50", "kind": "investment", "title": "Synthetic transfer", "category": "Personal", "date": "2026-10-12"}
+	createdTransfer := request("POST", "/api/movements", transfer, cookie, auth.CSRF, s.config.Origin)
+	check(createdTransfer, 201)
+	var transferID struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(createdTransfer.Body.Bytes(), &transferID)
+	check(request("POST", "/api/movements", map[string]any{"account_id": destination, "investment_mode": "contribution", "amount": "20", "kind": "investment", "title": "Synthetic external", "category": "Personal", "date": "2026-10-12"}, cookie, auth.CSRF, s.config.Origin), 201)
+	check(request("POST", "/api/movements", map[string]any{"account_id": destination, "source_account_id": usd, "investment_mode": "contribution", "amount": "1", "kind": "investment", "title": "Wrong currency", "category": "Personal", "date": "2026-10-12"}, cookie, auth.CSRF, s.config.Origin), 400)
+	check(request("POST", "/api/movements", map[string]any{"account_id": destination, "source_account_id": destination, "investment_mode": "contribution", "amount": "1", "kind": "investment", "title": "Same account", "category": "Personal", "date": "2026-10-12"}, cookie, auth.CSRF, s.config.Origin), 400)
+	check(request("PUT", fmt.Sprintf("/api/movements/%d", transferID.ID), map[string]any{"account_id": destination, "source_account_id": clp, "investment_mode": "contribution", "amount": "60", "kind": "investment", "title": "Synthetic transfer edited", "category": "Personal", "date": "2026-10-12"}, cookie, auth.CSRF, s.config.Origin), 200)
+	check(request("DELETE", fmt.Sprintf("/api/movements/%d", transferID.ID), nil, cookie, auth.CSRF, s.config.Origin), 200)
+	var accountList []Account
+	check(request("GET", "/api/accounts", nil, cookie, "", ""), 200)
+	_ = json.Unmarshal(request("GET", "/api/accounts", nil, cookie, "", "").Body.Bytes(), &accountList)
+	for _, a := range accountList {
+		if a.ID == clp && a.Balance != "1150.00" {
+			t.Fatalf("source balance changed after editing/deleting transfer: %s", a.Balance)
+		}
+		if a.ID == destination && a.Balance != "20.00" {
+			t.Fatalf("destination balance incorrect after deleting internal transfer: %s", a.Balance)
+		}
+	}
+	check(request("GET", "/api/overview?currency=CLP&month=2026-10", nil, cookie, "", ""), 200)
+	_ = json.Unmarshal(request("GET", "/api/overview?currency=CLP&month=2026-10", nil, cookie, "", "").Body.Bytes(), &overview)
+	if overview.Balance != "1170.00" || overview.Investment != "70.00" || overview.Income != "300.00" {
+		t.Fatalf("investment funding distorted totals: %+v", overview)
+	}
+	check(request("PUT", fmt.Sprintf("/api/accounts/%d", clp), map[string]string{"name": "Cuenta pesos", "type": "Personal", "currency": "USD", "opening_balance": "1000"}, cookie, auth.CSRF, s.config.Origin), 409)
 	w = request("GET", "/api/movements?currency=CLP&kind=expense&month=2026-10&limit=1", nil, cookie, "", "")
 	check(w, 200)
 	var listed struct {
