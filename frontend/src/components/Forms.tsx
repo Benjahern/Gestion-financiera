@@ -205,14 +205,26 @@ export function MovementForm({
   const [accountID, setAccountID] = useState(
     String(
       movement?.account_id ??
-        accounts.find((a) => a.currency === currency)?.id ??
-        accounts[0]?.id ??
+        accounts.find((a) => a.currency === currency && (kind !== "investment" || a.is_investment))
+          ?.id ??
+        (kind === "investment" ? undefined : accounts[0]?.id) ??
         "",
     ),
+  );
+  const [sourceAccountID, setSourceAccountID] = useState(String(movement?.source_account_id ?? ""));
+  const [investmentMode, setInvestmentMode] = useState<"legacy_outflow" | "contribution">(
+    movement?.kind === "investment"
+      ? (movement.investment_mode ?? "legacy_outflow")
+      : "contribution",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const unit = accounts.find((a) => String(a.id) === accountID)?.currency ?? currency;
+  const investmentDestinations = accounts.filter((a) => a.currency === currency && a.is_investment);
+  const selectedDestination = accounts.find((a) => String(a.id) === accountID);
+  const investmentSources = accounts.filter(
+    (a) => a.currency === selectedDestination?.currency && String(a.id) !== accountID,
+  );
   const label =
     kind === "income" ? "ingreso" : kind === "expense" ? "gasto" : "aporte de inversión";
   const submit = async (event: FormEvent) => {
@@ -227,6 +239,15 @@ export function MovementForm({
           category: category.trim() || "Sin categoría",
           category_confirmed: kind === "expense" && confirmed && !!category.trim(),
           account_id: Number(accountID),
+          ...(kind === "investment"
+            ? {
+                investment_mode: investmentMode,
+                source_account_id:
+                  investmentMode === "contribution" && sourceAccountID
+                    ? Number(sourceAccountID)
+                    : null,
+              }
+            : {}),
           date,
           amount: amount.trim().replace(",", "."),
           kind,
@@ -264,19 +285,63 @@ export function MovementForm({
               autoFocus
             />
           </label>
+          {kind === "investment" && investmentMode === "contribution" && (
+            <label className="field">
+              <span>Origen del dinero</span>
+              <select value={sourceAccountID} onChange={(e) => setSourceAccountID(e.target.value)}>
+                <option value="">Dinero externo · no descontar otra cuenta</option>
+                {investmentSources.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · {a.currency}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="field">
-            <span>Cuenta</span>
-            <select value={accountID} onChange={(e) => setAccountID(e.target.value)} required>
+            <span>
+              {kind === "investment"
+                ? investmentMode === "contribution"
+                  ? "Destino de inversión"
+                  : "Cuenta que se descuenta · registro anterior"
+                : "Cuenta"}
+            </span>
+            <select
+              value={accountID}
+              onChange={(e) => {
+                setAccountID(e.target.value);
+                if (sourceAccountID === e.target.value) setSourceAccountID("");
+              }}
+              required
+            >
               <option value="" disabled>
                 Selecciona una cuenta
               </option>
-              {accounts.map((a) => (
+              {(kind === "investment" && investmentMode === "contribution"
+                ? investmentDestinations
+                : accounts.filter((a) => a.currency === currency)
+              ).map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} · {a.currency}
                 </option>
               ))}
             </select>
           </label>
+          {kind === "investment" && movement?.investment_mode === "legacy_outflow" && (
+            <div className="field full">
+              <span>Este aporte antiguo sigue descontándose de la cuenta seleccionada.</span>
+              <Button
+                className="text-button"
+                onClick={() => {
+                  setInvestmentMode("contribution");
+                  const destination = investmentDestinations[0];
+                  if (destination) setAccountID(String(destination.id));
+                }}
+              >
+                Cambiar a aporte en una cuenta de inversión
+              </Button>
+            </div>
+          )}
           <label className="field">
             <span>Importe ({unit})</span>
             <input
@@ -383,7 +448,9 @@ export function MovementForm({
             ? "Los pesos se registran sin decimales."
             : "Los dólares admiten hasta dos decimales."}{" "}
           {kind === "investment" &&
-            "Un aporte descuenta dinero de la cuenta seleccionada; no representa una valoración de mercado."}
+            (investmentMode === "contribution"
+              ? "El dinero se suma al destino. Si eliges una cuenta de origen, se descuenta de ella; con dinero externo, no se descuenta otra cuenta. No representa una valoración de mercado."
+              : "Este registro anterior descuenta dinero de la cuenta seleccionada; no representa una valoración de mercado.")}
         </p>
         {error && (
           <div role="alert" className="error-message">
@@ -394,7 +461,16 @@ export function MovementForm({
           <Button className="secondary-button" disabled={busy} onClick={onClose}>
             Cancelar
           </Button>
-          <Button className="primary-button" type="submit" disabled={busy || accounts.length === 0}>
+          <Button
+            className="primary-button"
+            type="submit"
+            disabled={
+              busy ||
+              (kind === "investment" && investmentMode === "contribution"
+                ? investmentDestinations.length === 0
+                : accounts.length === 0)
+            }
+          >
             {busy ? "Guardando…" : "Guardar movimiento"}
           </Button>
         </div>

@@ -39,12 +39,18 @@ export function MovementRow({
           <span className="pending-label">Pendiente · completar descripción o categoría</span>
         )}
         <span>
-          {item.category} · {item.account}
+          {item.category} ·{" "}
+          {item.kind === "investment" && item.investment_mode === "contribution"
+            ? `${item.source_account || "Dinero externo"} → ${item.account}`
+            : item.account}
         </span>
       </div>
       <span className="movement-date">{dateLabel(item.date)}</span>
       <strong className={`movement-amount ${item.kind}`}>
-        {item.kind === "income" ? "+" : "−"}
+        {item.kind === "income" ||
+        (item.kind === "investment" && item.investment_mode === "contribution")
+          ? "+"
+          : "−"}
         {money(item.amount, item.currency)}
       </strong>
       {onEdit && onDelete && (
@@ -405,9 +411,14 @@ export function Accounts({
             ))}
           </div>
           <p className="form-note">
-            Una cuenta destacada por moneda. Al marcar otra, reemplaza la anterior sin cambiar saldos ni movimientos.
+            Una cuenta destacada por moneda. Al marcar otra, reemplaza la anterior sin cambiar
+            saldos ni movimientos.
           </p>
-          {summaryError && <p className="error-message" role="alert">{summaryError}</p>}
+          {summaryError && (
+            <p className="error-message" role="alert">
+              {summaryError}
+            </p>
+          )}
           <section className="panel">
             <SectionHeader
               title="Distribución de fondos"
@@ -517,7 +528,8 @@ export function Ledger({
           <h1 className="page-title">{config.title}</h1>
           <div className="page-subtitle">
             {monthLabel(overview.month)} · {overview.currency}
-            {config.kind === "investment" && " · Cuentas e historial de aportes, no rentabilidad de cartera"}
+            {config.kind === "investment" &&
+              " · Cuentas e historial de aportes, no rentabilidad de cartera"}
           </div>
         </div>
         <Button
@@ -530,9 +542,7 @@ export function Ledger({
           {config.kind === "investment" ? "Añadir aporte" : config.add}
         </Button>
       </div>
-      {page === "inversiones" && (
-        <InvestmentOverview accounts={accounts} overview={overview} />
-      )}
+      {page === "inversiones" && <InvestmentOverview accounts={accounts} overview={overview} />}
       {page === "inversiones" && (
         <InvestmentAccounts
           accounts={accounts}
